@@ -120,25 +120,22 @@ impl Elaborator {
         self.accumulator.next_id(root_id)
     }
 
-    pub fn push_elaborated_step(&mut self, step: ProofStep) -> (usize, usize) {
-        // TODO: discard elaborated steps that introduce already seen conclusions (and can be
-        // deleted)
-
-        let clause = step.clause.clone();
-        let elaboration = {
-            let mut added = std::mem::take(&mut self.accumulator).end();
-            added.push(ProofCommand::Step(step));
-            CommandDiff::Step(added)
-        };
+    pub fn push_elaboration(&mut self) -> (usize, usize) {
+        let elaboration = CommandDiff::Step(std::mem::take(&mut self.accumulator).end());
 
         let depth = self.depth();
         let frame = self.top_frame_mut();
+        frame.current_offset -= 1;
         let (old_index, new_index) = frame.push_new_index(depth);
-
         frame.diff.push((old_index, elaboration));
-
-        self.seen_clauses.insert(clause, new_index);
         (self.depth(), new_index)
+    }
+
+    pub fn push_elaborated_step(&mut self, step: ProofStep) -> (usize, usize) {
+        // TODO: discard elaborated steps that introduce already seen conclusions (and can be
+        // deleted)
+        self.add_new_command(ProofCommand::Step(step), true);
+        self.push_elaboration()
     }
 
     pub fn open_accumulator_subproof(&mut self) {
