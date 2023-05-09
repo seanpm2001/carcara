@@ -4,11 +4,11 @@ mod polyeq;
 mod pruning;
 
 pub use diff::{apply_diff, CommandDiff, ProofDiff};
+pub use pruning::prune_proof;
 
 use crate::{ast::*, utils::HashMapStack};
 use accumulator::Accumulator;
 use polyeq::PolyeqElaborator;
-use pruning::prune_proof;
 
 #[derive(Debug, Default)]
 struct Frame {
@@ -319,18 +319,12 @@ impl Elaborator {
         frame.diff.push((old_index, diff));
     }
 
-    pub fn get_diff(&mut self) -> ProofDiff {
+    pub fn end(mut self) -> ProofDiff {
         assert!(
             self.depth() == 0,
-            "trying to end proof building before closing subproof"
+            "cannot end elaboration before closing all subproofs"
         );
         let Frame { diff, new_indices, .. } = self.stack.pop().unwrap();
         ProofDiff { commands: diff, new_indices }
-    }
-
-    pub fn end(&mut self, original: Vec<ProofCommand>) -> Vec<ProofCommand> {
-        let diff = self.get_diff();
-        let elaborated = apply_diff(diff, original);
-        apply_diff(prune_proof(&elaborated), elaborated)
     }
 }

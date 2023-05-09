@@ -29,7 +29,7 @@ pub fn binarify_resolutions(pool: &mut TermPool, proof: &[ProofCommand]) -> Proo
             elab.close_subproof();
         }
     }
-    elab.get_diff()
+    elab.end()
 }
 
 fn binarify_single_resolution(

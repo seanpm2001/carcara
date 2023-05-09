@@ -2,7 +2,12 @@ pub mod error;
 mod lia_generic;
 mod rules;
 
-use crate::{ast::*, benchmarking::CollectResults, elaborator::Elaborator, CarcaraResult, Error};
+use crate::{
+    ast::*,
+    benchmarking::CollectResults,
+    elaborator::{apply_diff, prune_proof, Elaborator},
+    CarcaraResult, Error,
+};
 use ahash::AHashSet;
 use error::CheckerError;
 use rules::{ElaborationRule, Premise, Rule, RuleArgs, RuleResult};
@@ -189,11 +194,14 @@ impl<'c> ProofChecker<'c> {
 
         // We reset `self.elaborator` before returning any errors encountered while checking so we
         // don't leave the checker in an invalid state
-        let mut elaborator = self.elaborator.take().unwrap();
+        let elaborator = self.elaborator.take().unwrap();
         result?;
 
         let elaboration_time = Instant::now();
-        proof.commands = elaborator.end(proof.commands);
+        let diff = elaborator.end();
+        let elaborated = apply_diff(diff, proof.commands);
+        proof.commands = apply_diff(prune_proof(&elaborated), elaborated);
+
         if let Some(stats) = &mut self.config.statistics {
             *stats.elaboration_time += elaboration_time.elapsed();
         }
