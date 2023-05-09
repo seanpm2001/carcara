@@ -3,9 +3,10 @@ mod diff;
 mod polyeq;
 mod pruning;
 
+pub use diff::{apply_diff, CommandDiff, ProofDiff};
+
 use crate::{ast::*, utils::HashMapStack};
 use accumulator::Accumulator;
-use diff::{apply_diff, CommandDiff, ProofDiff};
 use polyeq::PolyeqElaborator;
 use pruning::prune_proof;
 
@@ -318,13 +319,17 @@ impl Elaborator {
         frame.diff.push((old_index, diff));
     }
 
-    pub fn end(&mut self, original: Vec<ProofCommand>) -> Vec<ProofCommand> {
+    pub fn get_diff(&mut self) -> ProofDiff {
         assert!(
             self.depth() == 0,
             "trying to end proof building before closing subproof"
         );
         let Frame { diff, new_indices, .. } = self.stack.pop().unwrap();
-        let diff = ProofDiff { commands: diff, new_indices };
+        ProofDiff { commands: diff, new_indices }
+    }
+
+    pub fn end(&mut self, original: Vec<ProofCommand>) -> Vec<ProofCommand> {
+        let diff = self.get_diff();
         let elaborated = apply_diff(diff, original);
         apply_diff(prune_proof(&elaborated), elaborated)
     }

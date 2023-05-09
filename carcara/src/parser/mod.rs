@@ -30,8 +30,27 @@ pub fn parse_instance<T: BufRead>(
     allow_int_real_subtyping: bool,
 ) -> CarcaraResult<(ProblemPrelude, Proof, TermPool)> {
     let mut pool = TermPool::new();
-    let mut parser = Parser::new(
+    let (prelude, proof) = parse_instance_with_pool(
         &mut pool,
+        problem,
+        proof,
+        apply_function_defs,
+        expand_lets,
+        allow_int_real_subtyping,
+    )?;
+    Ok((prelude, proof, pool))
+}
+
+pub(crate) fn parse_instance_with_pool<T: BufRead>(
+    pool: &mut TermPool,
+    problem: T,
+    proof: T,
+    apply_function_defs: bool,
+    expand_lets: bool,
+    allow_int_real_subtyping: bool,
+) -> CarcaraResult<(ProblemPrelude, Proof)> {
+    let mut parser = Parser::new(
+        pool,
         problem,
         apply_function_defs,
         expand_lets,
@@ -42,7 +61,7 @@ pub fn parse_instance<T: BufRead>(
     let commands = parser.parse_proof()?;
 
     let proof = Proof { premises, commands };
-    Ok((prelude, proof, pool))
+    Ok((prelude, proof))
 }
 
 /// A function definition, from a `define-fun` command.

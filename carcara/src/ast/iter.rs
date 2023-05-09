@@ -40,15 +40,20 @@ pub struct ProofIter<'a> {
 
 impl<'a> ProofIter<'a> {
     /// Constructs a new `ProofIter`, given a slice of proof commands.
-    pub(super) fn new(commands: &'a [ProofCommand]) -> Self {
+    pub fn new(commands: &'a [ProofCommand]) -> Self {
         Self { stack: vec![(0, commands)] }
     }
 
     /// Returns the current nesting depth of the iterator, or more precisely, the nesting depth of
-    /// the last command that was returned. This depth starts at zero, for commands in the root
+    /// the last command that was yielded. This depth starts at zero, for commands in the root
     /// proof.
     pub fn depth(&self) -> usize {
         self.stack.len() - 1
+    }
+
+    /// The index of the last command that was yielded.
+    pub fn current_index(&self) -> (usize, usize) {
+        (self.depth(), self.stack.last().unwrap().0 - 1)
     }
 
     /// Returns `true` if the iterator is currently in a subproof, that is, if its depth is greater
@@ -62,7 +67,7 @@ impl<'a> ProofIter<'a> {
         self.is_in_subproof().then(|| self.stack.last().unwrap().1)
     }
 
-    /// Returns `true` if the last command that was returned was the end step of the current
+    /// Returns `true` if the last command that was yielded was the end step of the current
     /// subproof.
     pub fn is_end_step(&self) -> bool {
         self.is_in_subproof() && {

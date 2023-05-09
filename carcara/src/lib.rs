@@ -40,6 +40,7 @@ pub mod benchmarking;
 pub mod checker;
 pub mod elaborator;
 pub mod parser;
+pub mod translation;
 mod utils;
 
 use checker::error::CheckerError;
