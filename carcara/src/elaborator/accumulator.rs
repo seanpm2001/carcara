@@ -16,6 +16,10 @@ impl Accumulator {
         Self { stack: vec![Frame::default()] }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.depth() == 0 && self.stack[0].commands.is_empty()
+    }
+
     fn top_frame(&self) -> &Frame {
         self.stack.last().unwrap()
     }

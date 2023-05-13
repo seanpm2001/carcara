@@ -2,9 +2,11 @@ mod accumulator;
 mod diff;
 mod polyeq;
 mod pruning;
+mod step;
 
 pub use diff::{apply_diff, CommandDiff, ProofDiff};
 pub use pruning::prune_proof;
+pub use step::*;
 
 use crate::{ast::*, utils::HashMapStack};
 use accumulator::Accumulator;
@@ -65,6 +67,10 @@ impl Elaborator {
         self.stack.len() - 1
     }
 
+    fn current_subproof_len(&self) -> usize {
+        (self.top_frame().new_indices.len() as isize + self.top_frame().current_offset) as usize
+    }
+
     /// Returns `true` if the command on the current frame at index `index` cannot be deleted.
     fn must_keep(&self, index: usize) -> bool {
         // If the command is the second to last in a subproof, it may be implicitly used by the last
@@ -101,9 +107,8 @@ impl Elaborator {
         }
 
         let index = if self.accumulator.depth() == 0 {
-            let frame = self.top_frame_mut();
-            frame.current_offset += 1;
-            (frame.new_indices.len() as isize + frame.current_offset - 1) as usize
+            self.top_frame_mut().current_offset += 1;
+            self.current_subproof_len() - 1
         } else {
             self.accumulator.top_frame_len()
         };
@@ -120,9 +125,7 @@ impl Elaborator {
         self.accumulator.next_id(root_id)
     }
 
-    pub fn push_elaboration(&mut self) -> (usize, usize) {
-        let elaboration = CommandDiff::Step(std::mem::take(&mut self.accumulator).end());
-
+    pub fn push_elaboration(&mut self, elaboration: CommandDiff) -> (usize, usize) {
         let depth = self.depth();
         let frame = self.top_frame_mut();
         frame.current_offset -= 1;
@@ -135,7 +138,8 @@ impl Elaborator {
         // TODO: discard elaborated steps that introduce already seen conclusions (and can be
         // deleted)
         self.add_new_command(ProofCommand::Step(step), true);
-        self.push_elaboration()
+        let elaboration = CommandDiff::Step(std::mem::take(&mut self.accumulator).end());
+        self.push_elaboration(elaboration)
     }
 
     pub fn open_accumulator_subproof(&mut self) {

@@ -1,6 +1,6 @@
 use crate::{
     ast::*,
-    elaborator::{Elaborator, ProofDiff},
+    elaborator::{CommandDiff, Elaborator, ProofDiff, StepElaborator},
 };
 
 pub fn binarify_resolutions(pool: &mut TermPool, proof: &[ProofCommand]) -> ProofDiff {
@@ -20,7 +20,10 @@ pub fn binarify_resolutions(pool: &mut TermPool, proof: &[ProofCommand]) -> Proo
                     .iter()
                     .map(|p| iter.get_premise(*p).clause())
                     .collect();
-                binarify_single_resolution(pool, &mut elab, s, premise_clauses);
+
+                let step_elab = StepElaborator::new(&mut elab, s.id.clone());
+                let elaboration = binarify_single_resolution(pool, step_elab, s, premise_clauses);
+                elab.push_elaboration(CommandDiff::Step(elaboration));
             }
             _ => elab.unchanged(command.clause()),
         }
@@ -34,12 +37,10 @@ pub fn binarify_resolutions(pool: &mut TermPool, proof: &[ProofCommand]) -> Proo
 
 fn binarify_single_resolution(
     pool: &mut TermPool,
-    elaborator: &mut Elaborator,
+    mut elaborator: StepElaborator,
     step: &ProofStep,
     premise_clauses: Vec<&[Rc<Term>]>,
-) {
-    let root_id = &step.id;
-
+) -> Vec<ProofCommand> {
     let mut args_iter = step.args.iter();
     let mut current_clause: Vec<Rc<Term>> = premise_clauses[0].to_vec();
     let mut previous_premise = step.premises[0];
@@ -73,8 +74,8 @@ fn binarify_single_resolution(
             }
         }
 
-        let mut step = ProofStep {
-            id: elaborator.get_new_id(root_id),
+        let step = ProofStep {
+            id: String::new(),
             clause: current_clause.clone(),
             rule: "resolution".to_owned(),
             premises: vec![previous_premise, elaborator.map_index(p)],
@@ -84,15 +85,9 @@ fn binarify_single_resolution(
             ],
             discharge: Vec::new(),
         };
-
-        if i + 2 == premise_clauses.len() {
-            // If this is last added step, we change the id to the root id, and push the elaboration
-            step.id = root_id.clone();
-            elaborator.push_elaborated_step(step);
-        } else {
-            previous_premise = elaborator.add_new_step(step);
-        }
+        previous_premise = elaborator.add_new_step(step);
     }
+    elaborator.end()
 }
 
 #[cfg(test)]
@@ -151,7 +146,7 @@ mod tests {
                 (step t2 (cl (not a)) :rule hole)
                 (step t3 (cl (not b)) :rule hole)
                 (step t4.t1 (cl b) :rule resolution :premises (t1 t2) :args (a true))
-                (step t4 (cl) :rule resolution :premises (t4.t1 t3) :args (b true))",
+                (step t4.t2 (cl) :rule resolution :premises (t4.t1 t3) :args (b true))",
             ),
             (
                 "(step t1 (cl a b c) :rule hole)
@@ -166,7 +161,7 @@ mod tests {
                 (step t4 (cl f) :rule hole)
                 (step t5.t1 (cl b c d) :rule resolution :premises (t1 t2) :args (a true))
                 (step t5.t2 (cl b d e (not f)) :rule resolution :premises (t5.t1 t3) :args (c true))
-                (step t5 (cl b d e) :rule resolution :premises (t5.t2 t4) :args (f false))",
+                (step t5.t3 (cl b d e) :rule resolution :premises (t5.t2 t4) :args (f false))",
             ),
         ];
         run_tests(definitions, cases);
