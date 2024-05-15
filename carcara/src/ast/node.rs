@@ -107,3 +107,188 @@ pub struct SubproofNode {
     /// refer to steps outside it.
     pub outbound_premises: Vec<(usize, Rc<ProofNode>)>,
 }
+
+/// Converts a list of proof commands into a `ProofNode`.
+pub fn proof_list_to_node(commands: Vec<ProofCommand>) -> Rc<ProofNode> {
+    struct Frame {
+        commands: std::vec::IntoIter<ProofCommand>,
+        accumulator: Vec<Rc<ProofNode>>,
+        args: Vec<AnchorArg>,
+        outbound_premises: Vec<(usize, Rc<ProofNode>)>,
+    }
+
+    let mut stack: Vec<Frame> = vec![Frame {
+        commands: commands.into_iter(),
+        accumulator: Vec::new(),
+        args: Vec::new(),
+        outbound_premises: Vec::new(),
+    }];
+
+    let new_root_proof = loop {
+        let next = stack.last_mut().unwrap().commands.next();
+        let node = match next {
+            Some(ProofCommand::Assume { id, term }) => ProofNode::Assume { id, term },
+            Some(ProofCommand::Step(s)) => {
+                let premises: Vec<_> = s
+                    .premises
+                    .into_iter()
+                    .map(|(depth, index)| (depth, stack[depth].accumulator[index].clone()))
+                    .collect();
+                let discharge: Vec<_> = s
+                    .discharge
+                    .into_iter()
+                    .map(|(depth, index)| (depth, stack[depth].accumulator[index].clone()))
+                    .collect();
+
+                for (depth, p) in &premises {
+                    if *depth < stack.len() - 1 {
+                        let frame = stack.last_mut().unwrap();
+                        frame.outbound_premises.push((*depth, p.clone()));
+                    }
+                }
+
+                let previous_step = if stack.len() > 1 && stack.last().unwrap().commands.len() == 0
+                {
+                    Some(stack.last().unwrap().accumulator.last().unwrap().clone())
+                } else {
+                    None
+                };
+
+                ProofNode::Step(StepNode {
+                    id: s.id,
+                    clause: s.clause,
+                    rule: s.rule,
+                    premises,
+                    args: s.args,
+                    discharge,
+                    previous_step,
+                })
+            }
+            Some(ProofCommand::Subproof(s)) => {
+                let frame = Frame {
+                    commands: s.commands.into_iter(),
+                    accumulator: Vec::new(),
+                    args: s.args,
+                    outbound_premises: Vec::new(),
+                };
+                stack.push(frame);
+                continue;
+            }
+
+            // We reached the end of the current subproof
+            None => {
+                let mut frame = stack.pop().unwrap();
+                if stack.is_empty() {
+                    break frame.accumulator;
+                }
+
+                for (depth, p) in &frame.outbound_premises {
+                    if *depth < stack.len() - 1 {
+                        let frame = stack.last_mut().unwrap();
+                        frame.outbound_premises.push((*depth, p.clone()));
+                    }
+                }
+
+                ProofNode::Subproof(SubproofNode {
+                    last_step: frame.accumulator.pop().unwrap(),
+                    args: frame.args,
+                    outbound_premises: frame.outbound_premises,
+                })
+            }
+        };
+        stack.last_mut().unwrap().accumulator.push(Rc::new(node));
+    };
+
+    new_root_proof
+        .into_iter()
+        .find(|node| node.clause().is_empty())
+        .unwrap()
+}
+
+/// Converts a `ProofNode` into a list of proof commands.
+pub fn proof_node_to_list(root: Rc<ProofNode>) -> Vec<ProofCommand> {
+    use std::collections::{HashMap, HashSet};
+
+    let mut stack: Vec<Vec<ProofCommand>> = vec![Vec::new()];
+
+    let mut seen: HashMap<Rc<ProofNode>, (usize, usize)> = HashMap::new();
+    let mut todo: Vec<(Rc<ProofNode>, usize, bool)> = vec![(root, 0, false)];
+    let mut did_outbound: HashSet<Rc<ProofNode>> = HashSet::new();
+
+    loop {
+        let Some((node, depth, is_done)) = todo.pop() else {
+            assert!(stack.len() == 1);
+            return stack.pop().unwrap();
+        };
+        if !is_done && seen.contains_key(&node) {
+            continue;
+        }
+
+        let command = match node.as_ref() {
+            ProofNode::Assume { id, term } => {
+                ProofCommand::Assume { id: id.clone(), term: term.clone() }
+            }
+            ProofNode::Step(s) if !is_done => {
+                todo.push((node.clone(), depth, true));
+
+                if let Some(previous) = &s.previous_step {
+                    todo.push((previous.clone(), depth, false));
+                }
+
+                let premises_and_discharge = s.premises.iter().chain(s.discharge.iter()).rev();
+                todo.extend(premises_and_discharge.map(|(d, node)| (node.clone(), *d, false)));
+                continue;
+            }
+            ProofNode::Step(s) => {
+                let premises: Vec<_> = s.premises.iter().map(|(_, node)| seen[node]).collect();
+                let discharge: Vec<_> = s.discharge.iter().map(|(_, node)| seen[node]).collect();
+                ProofCommand::Step(ProofStep {
+                    id: s.id.clone(),
+                    clause: s.clause.clone(),
+                    rule: s.rule.clone(),
+                    premises,
+                    args: s.args.clone(),
+                    discharge,
+                })
+            }
+            ProofNode::Subproof(s) if !is_done => {
+                assert!(
+                    depth == stack.len() - 1,
+                    "all outbound premises should have already been dealt with!"
+                );
+
+                // First, we add all of the subproof's outbound premises if he haven't already
+                if !did_outbound.contains(&node) {
+                    did_outbound.insert(node.clone());
+                    todo.push((node.clone(), depth, false));
+                    todo.extend(
+                        s.outbound_premises
+                            .iter()
+                            .map(|(depth, premise)| (premise.clone(), *depth, false)),
+                    );
+                    continue;
+                }
+
+                todo.push((node.clone(), depth, true));
+                todo.push((s.last_step.clone(), depth + 1, false));
+                stack.push(Vec::new());
+                continue;
+            }
+            ProofNode::Subproof(s) => {
+                let commands = stack.pop().unwrap();
+                if stack.is_empty() {
+                    return commands;
+                }
+                assert!(commands.len() >= 2, "malformed subproof!");
+                ProofCommand::Subproof(Subproof {
+                    commands,
+                    args: s.args.clone(),
+                    context_id: 0,
+                })
+            }
+        };
+        let index = stack[depth].len();
+        seen.insert(node, (depth, index));
+        stack[depth].push(command);
+    }
+}
