@@ -6,6 +6,7 @@
 mod macros;
 mod context;
 mod iter;
+mod node;
 mod polyeq;
 pub mod pool;
 pub(crate) mod printer;
@@ -16,6 +17,7 @@ mod tests;
 
 pub use context::{Context, ContextStack};
 pub use iter::ProofIter;
+pub use node::{ProofNode, StepNode, SubproofNode};
 pub use polyeq::{alpha_equiv, polyeq, polyeq_mod_nary, tracing_polyeq_mod_nary};
 pub use pool::{PrimitivePool, TermPool};
 pub use printer::{print_proof, USE_SHARING_IN_TERM_DISPLAY};
@@ -196,7 +198,7 @@ impl ProofArg {
 }
 
 /// An argument for an `anchor` command.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnchorArg {
     /// A "variable declaration" style argument, of the form `(<symbol> <sort>)`.
     Variable(SortedVar),
