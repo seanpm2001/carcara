@@ -520,8 +520,8 @@ fn slice_command(options: SliceCommandOptions) -> CliResult<Vec<ast::ProofComman
         .ok_or_else(|| CliError::InvalidSliceId(options.from.to_owned()))?;
 
     let diff =
-        carcara::elaborator::slice_proof(&proof.commands, source_index, options.max_distance);
-    Ok(carcara::elaborator::apply_diff(diff, proof.commands))
+        carcara::old_elaborator::slice_proof(&proof.commands, source_index, options.max_distance);
+    Ok(carcara::old_elaborator::apply_diff(diff, proof.commands))
 }
 
 fn generate_lia_problems_command(options: ParseCommandOptions, use_sharing: bool) -> CliResult<()> {

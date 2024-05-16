@@ -6,7 +6,7 @@ mod rules;
 use crate::{
     ast::*,
     benchmarking::{CollectResults, OnlineBenchmarkResults},
-    elaborator::Elaborator,
+    old_elaborator::Elaborator,
     CarcaraResult, Error, LiaGenericOptions,
 };
 use error::{CheckerError, SubproofError};
