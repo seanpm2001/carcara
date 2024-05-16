@@ -1,6 +1,7 @@
 mod transitivity;
 
 use crate::ast::*;
+use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 
 #[allow(unused)]
@@ -22,9 +23,12 @@ where
     let mut cache: HashMap<&Rc<ProofNode>, Rc<ProofNode>> = HashMap::new();
     let mut did_outbound: HashSet<&Rc<ProofNode>> = HashSet::new();
     let mut todo = vec![(root, false)];
+    let mut outbound_premises_stack = vec![IndexSet::new()];
 
     while let Some((node, is_done)) = todo.pop() {
-        assert!(!cache.contains_key(node), "this shouldn't happen I think");
+        if cache.contains_key(node) {
+            continue;
+        }
 
         let mutated = match node.as_ref() {
             ProofNode::Assume { .. } => mutate_func(pool, node),
@@ -57,6 +61,11 @@ where
                 mutate_func(pool, &new_node)
             }
             ProofNode::Subproof(s) if !is_done => {
+                assert!(
+                    node.depth() == outbound_premises_stack.len() - 1,
+                    "all outbound premises should have already been dealt with!"
+                );
+
                 if !did_outbound.contains(node) {
                     did_outbound.insert(node);
                     todo.push((node, false));
@@ -66,18 +75,25 @@ where
 
                 todo.push((node, true));
                 todo.push((&s.last_step, false));
+                outbound_premises_stack.push(IndexSet::new());
                 continue;
             }
             ProofNode::Subproof(s) => {
-                let new_node = Rc::new(ProofNode::Subproof(SubproofNode {
+                let outbound_premises =
+                    outbound_premises_stack.pop().unwrap().into_iter().collect();
+                Rc::new(ProofNode::Subproof(SubproofNode {
                     last_step: cache[&s.last_step].clone(),
                     args: s.args.clone(),
-                    outbound_premises: Vec::new(), // TODO: recompute outbound premises
-                }));
-                mutate_func(pool, &new_node)
+                    outbound_premises,
+                }))
             }
         };
+        outbound_premises_stack
+            .last_mut()
+            .unwrap()
+            .extend(mutated.get_outbound_premises());
         cache.insert(node, mutated);
     }
+    assert!(outbound_premises_stack.len() == 1 && outbound_premises_stack[0].is_empty());
     cache[root].clone()
 }

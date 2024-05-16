@@ -60,6 +60,19 @@ impl ProofNode {
         }
     }
 
+    /// Returns a vector of the "outbound" premises of this node.
+    ///
+    /// These are the premises whose depth is smaller than the node's depth, that is, the premises
+    /// that refer to outside of this node's subproof.
+    pub fn get_outbound_premises(&self) -> Vec<Rc<ProofNode>> {
+        let ps = match self {
+            ProofNode::Assume { .. } => return Vec::new(),
+            ProofNode::Step(s) => s.premises.iter(),
+            ProofNode::Subproof(s) => s.outbound_premises.iter(),
+        };
+        ps.filter(|p| p.depth() < self.depth()).cloned().collect()
+    }
+
     /// Returns `true` if the node is an `assume` command.
     pub fn is_assume(&self) -> bool {
         matches!(self, ProofNode::Assume { .. })
