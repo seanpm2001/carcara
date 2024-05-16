@@ -124,18 +124,20 @@ pub struct SubproofNode {
 
 /// Converts a list of proof commands into a `ProofNode`.
 pub fn proof_list_to_node(commands: Vec<ProofCommand>) -> Rc<ProofNode> {
+    use indexmap::IndexSet;
+
     struct Frame {
         commands: std::vec::IntoIter<ProofCommand>,
         accumulator: Vec<Rc<ProofNode>>,
         args: Vec<AnchorArg>,
-        outbound_premises: Vec<Rc<ProofNode>>,
+        outbound_premises: IndexSet<Rc<ProofNode>>,
     }
 
     let mut stack: Vec<Frame> = vec![Frame {
         commands: commands.into_iter(),
         accumulator: Vec::new(),
         args: Vec::new(),
-        outbound_premises: Vec::new(),
+        outbound_premises: IndexSet::new(),
     }];
 
     let new_root_proof = loop {
@@ -159,7 +161,7 @@ pub fn proof_list_to_node(commands: Vec<ProofCommand>) -> Rc<ProofNode> {
                 for p in &premises {
                     if p.depth() < stack.len() - 1 {
                         let frame = stack.last_mut().unwrap();
-                        frame.outbound_premises.push(p.clone());
+                        frame.outbound_premises.insert(p.clone());
                     }
                 }
 
@@ -186,7 +188,7 @@ pub fn proof_list_to_node(commands: Vec<ProofCommand>) -> Rc<ProofNode> {
                     commands: s.commands.into_iter(),
                     accumulator: Vec::new(),
                     args: s.args,
-                    outbound_premises: Vec::new(),
+                    outbound_premises: IndexSet::new(),
                 };
                 stack.push(frame);
                 continue;
@@ -202,14 +204,14 @@ pub fn proof_list_to_node(commands: Vec<ProofCommand>) -> Rc<ProofNode> {
                 for p in &frame.outbound_premises {
                     if p.depth() < stack.len() - 1 {
                         let frame = stack.last_mut().unwrap();
-                        frame.outbound_premises.push(p.clone());
+                        frame.outbound_premises.insert(p.clone());
                     }
                 }
 
                 ProofNode::Subproof(SubproofNode {
                     last_step: frame.accumulator.pop().unwrap(),
                     args: frame.args,
-                    outbound_premises: frame.outbound_premises,
+                    outbound_premises: frame.outbound_premises.into_iter().collect(),
                 })
             }
         };
