@@ -231,7 +231,7 @@ pub fn proof_node_to_list(root: &Rc<ProofNode>) -> Vec<ProofCommand> {
     let mut stack: Vec<Vec<ProofCommand>> = vec![Vec::new()];
 
     let mut seen: HashMap<&Rc<ProofNode>, (usize, usize)> = HashMap::new();
-    let mut todo: Vec<(&Rc<ProofNode>, bool)> = vec![(&root, false)];
+    let mut todo: Vec<(&Rc<ProofNode>, bool)> = vec![(root, false)];
     let mut did_outbound: HashSet<&Rc<ProofNode>> = HashSet::new();
 
     loop {
