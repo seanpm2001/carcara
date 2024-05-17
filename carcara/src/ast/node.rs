@@ -225,14 +225,14 @@ pub fn proof_list_to_node(commands: Vec<ProofCommand>) -> Rc<ProofNode> {
 }
 
 /// Converts a `ProofNode` into a list of proof commands.
-pub fn proof_node_to_list(root: Rc<ProofNode>) -> Vec<ProofCommand> {
+pub fn proof_node_to_list(root: &Rc<ProofNode>) -> Vec<ProofCommand> {
     use std::collections::{HashMap, HashSet};
 
     let mut stack: Vec<Vec<ProofCommand>> = vec![Vec::new()];
 
-    let mut seen: HashMap<Rc<ProofNode>, (usize, usize)> = HashMap::new();
-    let mut todo: Vec<(Rc<ProofNode>, bool)> = vec![(root, false)];
-    let mut did_outbound: HashSet<Rc<ProofNode>> = HashSet::new();
+    let mut seen: HashMap<&Rc<ProofNode>, (usize, usize)> = HashMap::new();
+    let mut todo: Vec<(&Rc<ProofNode>, bool)> = vec![(&root, false)];
+    let mut did_outbound: HashSet<&Rc<ProofNode>> = HashSet::new();
 
     loop {
         let Some((node, is_done)) = todo.pop() else {
@@ -248,14 +248,14 @@ pub fn proof_node_to_list(root: Rc<ProofNode>) -> Vec<ProofCommand> {
                 ProofCommand::Assume { id: id.clone(), term: term.clone() }
             }
             ProofNode::Step(s) if !is_done => {
-                todo.push((node.clone(), true));
+                todo.push((node, true));
 
                 if let Some(previous) = &s.previous_step {
-                    todo.push((previous.clone(), false));
+                    todo.push((previous, false));
                 }
 
                 let premises_and_discharge = s.premises.iter().chain(s.discharge.iter()).rev();
-                todo.extend(premises_and_discharge.map(|node| (node.clone(), false)));
+                todo.extend(premises_and_discharge.map(|node| (node, false)));
                 continue;
             }
             ProofNode::Step(s) => {
@@ -278,18 +278,14 @@ pub fn proof_node_to_list(root: Rc<ProofNode>) -> Vec<ProofCommand> {
 
                 // First, we add all of the subproof's outbound premises if he haven't already
                 if !did_outbound.contains(&node) {
-                    did_outbound.insert(node.clone());
-                    todo.push((node.clone(), false));
-                    todo.extend(
-                        s.outbound_premises
-                            .iter()
-                            .map(|premise| (premise.clone(), false)),
-                    );
+                    did_outbound.insert(node);
+                    todo.push((node, false));
+                    todo.extend(s.outbound_premises.iter().map(|premise| (premise, false)));
                     continue;
                 }
 
-                todo.push((node.clone(), true));
-                todo.push((s.last_step.clone(), false));
+                todo.push((node, true));
+                todo.push((&s.last_step, false));
                 stack.push(Vec::new());
                 continue;
             }

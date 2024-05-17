@@ -163,6 +163,6 @@ fn test_node() {
     let expected = parse_proof(&mut pool, expected);
 
     let node = proof_list_to_node(original.commands);
-    let got = proof_node_to_list(node);
+    let got = proof_node_to_list(&node);
     assert_eq!(expected.commands, got);
 }
