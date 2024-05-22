@@ -5,7 +5,7 @@ fn add_symm_step(pool: &mut PrimitivePool, node: &Rc<ProofNode>) -> Rc<ProofNode
     let (a, b) = match_term!((= a b) = node.clause()[0]).unwrap();
     let clause = vec![build_term!(pool, (= {b.clone()} {a.clone()}))];
     Rc::new(ProofNode::Step(StepNode {
-        id: format!("{}.symm", node.id()),
+        id: format!("{}.symm", node.id()), // TODO: maybe use different id?
         depth: node.depth(),
         clause,
         rule: "symm".into(),
@@ -96,4 +96,169 @@ pub fn trans(pool: &mut PrimitivePool, step: &StepNode) -> Result<Rc<ProofNode>,
         premises: new_premises,
         ..step.clone()
     })))
+}
+
+pub fn eq_transitive(
+    pool: &mut PrimitivePool,
+    step: &StepNode,
+) -> Result<Rc<ProofNode>, CheckerError> {
+    let n = step.clause.len();
+    assert!(n > 2);
+
+    // The last term in the conclusion clause should be an equality, and it will be the conclusion
+    // of the transitive chain
+    let conclusion_equality = match_term_err!((= t u) = step.clause.last().unwrap())?;
+
+    // The first `conclusion.len()` - 1 terms in the conclusion clause must be a sequence of
+    // inequalities, and they will be the premises of the transitive chain
+    let mut premise_equalities: Vec<_> = step.clause[..n - 1]
+        .iter()
+        .map(|term| match_term_err!((not (= t u)) = term))
+        .collect::<Result<_, _>>()?;
+
+    let mut new_clause: Vec<_> = step.clause.clone();
+    let (needs_reordering, num_needed, should_flip) = find_and_trace_chain(
+        conclusion_equality,
+        &mut premise_equalities,
+        &mut new_clause[..n - 1],
+    )?;
+
+    if !needs_reordering && num_needed == n - 1 && should_flip.is_empty() {
+        return Ok(Rc::new(ProofNode::Step(step.clone())));
+    }
+
+    for &i in &should_flip {
+        new_clause[i] = if let Some((a, b)) = match_term!((not (= a b)) = &new_clause[i]) {
+            build_term!(pool, (not (= {b.clone()} {a.clone()})))
+        } else {
+            panic!()
+        };
+    }
+
+    let not_needed = if num_needed == n - 1 {
+        Vec::new()
+    } else {
+        let conclusion = new_clause.pop().unwrap();
+        let not_needed = new_clause.split_off(num_needed);
+        new_clause.push(conclusion);
+        not_needed
+    };
+
+    let new_eq_transitive_step = Rc::new(ProofNode::Step(StepNode {
+        id: "todo".to_owned(),
+        depth: step.depth,
+        clause: new_clause,
+        rule: "eq_transitive".to_owned(),
+        premises: Vec::new(),
+        args: Vec::new(),
+        discharge: Vec::new(),
+        previous_step: None,
+    }));
+
+    let mut latest_step = new_eq_transitive_step.clone();
+
+    if !should_flip.is_empty() {
+        latest_step = flip_eq_transitive_premises(
+            pool,
+            new_eq_transitive_step,
+            step.depth,
+            latest_step.clause(),
+            &should_flip,
+        );
+    }
+
+    if !not_needed.is_empty() {
+        let mut clause = latest_step.clause().to_vec();
+        clause.extend(not_needed);
+        latest_step = Rc::new(ProofNode::Step(StepNode {
+            id: "todo".to_owned(),
+            depth: step.depth,
+            clause,
+            rule: "or_intro".to_owned(),
+            premises: vec![latest_step],
+            args: Vec::new(),
+            discharge: Vec::new(),
+            previous_step: None,
+        }));
+    }
+
+    Ok(Rc::new(ProofNode::Step(StepNode {
+        id: step.id.clone(),
+        depth: step.depth,
+        clause: step.clause.clone(),
+        rule: "reordering".to_owned(),
+        premises: vec![latest_step],
+        args: Vec::new(),
+        discharge: Vec::new(),
+        previous_step: None,
+    })))
+}
+
+fn flip_eq_transitive_premises(
+    pool: &mut dyn TermPool,
+    new_eq_transitive_step: Rc<ProofNode>,
+    depth: usize,
+    new_clause: &[Rc<Term>],
+    should_flip: &[usize],
+) -> Rc<ProofNode> {
+    let resolution_pivots: Vec<_> = should_flip
+        .iter()
+        .map(|&i| {
+            let (a, b) = match_term!((not (= a b)) = new_clause[i]).unwrap();
+            let pivot = build_term!(pool, (= {a.clone()} {b.clone()}));
+            let to_introduce = build_term!(pool, (not (= {b.clone()} {a.clone()})));
+            let clause = vec![to_introduce.clone(), pivot.clone()];
+            let new_step = Rc::new(ProofNode::Step(StepNode {
+                id: "todo".to_owned(),
+                depth,
+                clause,
+                rule: "eq_symmetric".to_owned(),
+                premises: Vec::new(),
+                args: Vec::new(),
+                discharge: Vec::new(),
+                previous_step: None,
+            }));
+            (new_step, pivot, to_introduce)
+        })
+        .collect();
+
+    let clause = {
+        let should_flip = {
+            let mut new = vec![false; new_clause.len()];
+            for &i in should_flip {
+                new[i] = true;
+            }
+            new
+        };
+        let mut original: Vec<_> = new_clause
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| !should_flip[i])
+            .map(|(_, t)| t.clone())
+            .collect();
+        original.extend(
+            resolution_pivots
+                .iter()
+                .map(|(_, _, to_introduce)| to_introduce.clone()),
+        );
+        original
+    };
+    let mut premises = vec![new_eq_transitive_step];
+    premises.extend(resolution_pivots.iter().map(|(index, _, _)| index.clone()));
+    let args: Vec<_> = resolution_pivots
+        .into_iter()
+        .flat_map(|(_, pivot, _)| [pivot, pool.bool_false()])
+        .map(ProofArg::Term)
+        .collect();
+
+    Rc::new(ProofNode::Step(StepNode {
+        id: "todo".to_owned(),
+        depth,
+        clause,
+        rule: "strict_resolution".to_owned(),
+        premises,
+        args,
+        discharge: Vec::new(),
+        previous_step: None,
+    }))
 }

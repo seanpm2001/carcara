@@ -1,6 +1,6 @@
 mod transitivity;
 
-use crate::ast::*;
+use crate::{ast::*, CheckerError};
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 
@@ -8,11 +8,24 @@ use std::collections::{HashMap, HashSet};
 pub fn elaborate(pool: &mut PrimitivePool, root: &Rc<ProofNode>) -> Rc<ProofNode> {
     mutate(pool, root, |pool, node| {
         if let ProofNode::Step(s) = node.as_ref() {
-            if s.rule == "trans" {
-                return transitivity::trans(pool, s).unwrap();
+            if let Some(func) = get_elaboration_function(&s.rule) {
+                return func(pool, s).unwrap(); // TODO: add proper error handling
             }
         }
         node.clone()
+    })
+}
+
+type ElaborationFunc = fn(&mut PrimitivePool, &StepNode) -> Result<Rc<ProofNode>, CheckerError>;
+
+fn get_elaboration_function(rule: &str) -> Option<ElaborationFunc> {
+    Some(match rule {
+        "eq_transitive" => transitivity::eq_transitive,
+        "trans" => transitivity::trans,
+
+        // TODO: migrate these rules to new elaborator
+        "resolution" | "th_resolution" | "refl" => return None,
+        _ => return None,
     })
 }
 
