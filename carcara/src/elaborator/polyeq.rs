@@ -4,7 +4,7 @@ use crate::{
     utils::{DedupIterator, HashMapStack},
 };
 
-pub struct PolyeqElaborator<'a> {
+pub(super) struct PolyeqElaborator<'a> {
     ids: &'a mut IdHelper,
     root_depth: usize,
     cache: HashMapStack<(Rc<Term>, Rc<Term>), Rc<ProofNode>>,
