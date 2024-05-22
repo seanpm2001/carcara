@@ -110,3 +110,39 @@ where
     assert!(outbound_premises_stack.len() == 1 && outbound_premises_stack[0].is_empty());
     cache[root].clone()
 }
+
+struct IdHelper {
+    root: String,
+    stack: Vec<usize>,
+}
+
+impl IdHelper {
+    fn new(root: &str) -> Self {
+        Self {
+            root: root.to_owned(),
+            stack: vec![0],
+        }
+    }
+
+    fn next_id(&mut self) -> String {
+        use std::fmt::Write;
+
+        let mut current = self.root.clone();
+        for i in &self.stack {
+            write!(&mut current, ".t{}", i + 1).unwrap();
+        }
+        *self.stack.last_mut().unwrap() += 1;
+        current
+    }
+
+    #[allow(unused)]
+    fn push(&mut self) {
+        self.stack.push(0);
+    }
+
+    #[allow(unused)]
+    fn pop(&mut self) {
+        assert!(self.stack.len() >= 2, "can't pop last frame from the stack");
+        self.stack.pop();
+    }
+}

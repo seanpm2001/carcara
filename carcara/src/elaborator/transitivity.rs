@@ -1,11 +1,12 @@
+use super::IdHelper;
 use crate::{ast::*, checker::error::CheckerError};
 
-fn add_symm_step(pool: &mut PrimitivePool, node: &Rc<ProofNode>) -> Rc<ProofNode> {
+fn add_symm_step(pool: &mut PrimitivePool, node: &Rc<ProofNode>, id: String) -> Rc<ProofNode> {
     assert_eq!(node.clause().len(), 1);
     let (a, b) = match_term!((= a b) = node.clause()[0]).unwrap();
     let clause = vec![build_term!(pool, (= {b.clone()} {a.clone()}))];
     Rc::new(ProofNode::Step(StepNode {
-        id: format!("{}.symm", node.id()), // TODO: maybe use different id?
+        id,
         depth: node.depth(),
         clause,
         rule: "symm".into(),
@@ -88,8 +89,9 @@ pub fn trans(pool: &mut PrimitivePool, step: &StepNode) -> Result<Rc<ProofNode>,
 
     // If there are any premises that need flipping, we need to introduce `symm` steps to flip the
     // needed equalities
+    let mut ids = IdHelper::new(&step.id);
     for i in should_flip {
-        new_premises[i] = add_symm_step(pool, &new_premises[i]);
+        new_premises[i] = add_symm_step(pool, &new_premises[i], ids.next_id());
     }
 
     Ok(Rc::new(ProofNode::Step(StepNode {
@@ -144,8 +146,10 @@ pub fn eq_transitive(
         not_needed
     };
 
+    let mut ids = IdHelper::new(&step.id);
+
     let new_eq_transitive_step = Rc::new(ProofNode::Step(StepNode {
-        id: "todo".to_owned(),
+        id: ids.next_id(),
         depth: step.depth,
         clause: new_clause,
         rule: "eq_transitive".to_owned(),
@@ -164,6 +168,7 @@ pub fn eq_transitive(
             step.depth,
             latest_step.clause(),
             &should_flip,
+            &mut ids,
         );
     }
 
@@ -171,7 +176,7 @@ pub fn eq_transitive(
         let mut clause = latest_step.clause().to_vec();
         clause.extend(not_needed);
         latest_step = Rc::new(ProofNode::Step(StepNode {
-            id: "todo".to_owned(),
+            id: ids.next_id(),
             depth: step.depth,
             clause,
             rule: "or_intro".to_owned(),
@@ -200,6 +205,7 @@ fn flip_eq_transitive_premises(
     depth: usize,
     new_clause: &[Rc<Term>],
     should_flip: &[usize],
+    ids: &mut IdHelper,
 ) -> Rc<ProofNode> {
     let resolution_pivots: Vec<_> = should_flip
         .iter()
@@ -209,7 +215,7 @@ fn flip_eq_transitive_premises(
             let to_introduce = build_term!(pool, (not (= {b.clone()} {a.clone()})));
             let clause = vec![to_introduce.clone(), pivot.clone()];
             let new_step = Rc::new(ProofNode::Step(StepNode {
-                id: "todo".to_owned(),
+                id: ids.next_id(),
                 depth,
                 clause,
                 rule: "eq_symmetric".to_owned(),
@@ -252,7 +258,7 @@ fn flip_eq_transitive_premises(
         .collect();
 
     Rc::new(ProofNode::Step(StepNode {
-        id: "todo".to_owned(),
+        id: ids.next_id(),
         depth,
         clause,
         rule: "strict_resolution".to_owned(),
