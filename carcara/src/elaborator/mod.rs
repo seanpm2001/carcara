@@ -8,15 +8,78 @@ use polyeq::PolyeqElaborator;
 use std::collections::{HashMap, HashSet};
 
 #[allow(unused)]
-pub fn elaborate(pool: &mut PrimitivePool, root: &Rc<ProofNode>) -> Rc<ProofNode> {
+pub fn elaborate(
+    pool: &mut PrimitivePool,
+    premises: &IndexSet<Rc<Term>>,
+    root: &Rc<ProofNode>,
+) -> Rc<ProofNode> {
     mutate(pool, root, |pool, context, node| {
-        if let ProofNode::Step(s) = node.as_ref() {
-            if let Some(func) = get_elaboration_function(&s.rule) {
-                return func(pool, context, s).unwrap(); // TODO: add proper error handling
+        match node.as_ref() {
+            ProofNode::Assume { id, depth, term }
+                if context.is_empty() && !premises.contains(term) =>
+            {
+                return elaborate_assume(pool, premises, id, *depth, term)
             }
+            ProofNode::Step(s) => {
+                if let Some(func) = get_elaboration_function(&s.rule) {
+                    return func(pool, context, s).unwrap(); // TODO: add proper error handling
+                }
+            }
+            ProofNode::Subproof(_) => unreachable!(),
+            ProofNode::Assume { .. } => (),
         }
         node.clone()
     })
+}
+
+fn elaborate_assume(
+    pool: &mut dyn TermPool,
+    premises: &IndexSet<Rc<Term>>,
+    id: &str,
+    depth: usize,
+    term: &Rc<Term>,
+) -> Rc<ProofNode> {
+    let mut found = None;
+    let mut polyeq_time = std::time::Duration::ZERO;
+    for p in premises {
+        if polyeq_mod_nary(term, p, &mut polyeq_time) {
+            found = Some(p.clone());
+            break;
+        }
+    }
+    let premise = found.expect("trying to elaborate assume, but it is invalid!");
+
+    let new_assume = Rc::new(ProofNode::Assume {
+        id: id.to_owned(),
+        depth,
+        term: premise.clone(),
+    });
+
+    let mut ids = IdHelper::new(id);
+    let equality_step = PolyeqElaborator::new(&mut ids, depth, false).elaborate(
+        pool,
+        premise.clone(),
+        term.clone(),
+    );
+
+    let equiv1_step = Rc::new(ProofNode::Step(StepNode {
+        id: ids.next_id(),
+        depth,
+        clause: vec![build_term!(pool, (not {premise.clone()})), term.clone()],
+        rule: "equiv1".to_owned(),
+        premises: vec![equality_step],
+        ..Default::default()
+    }));
+
+    Rc::new(ProofNode::Step(StepNode {
+        id: ids.next_id(),
+        depth,
+        clause: vec![term.clone()],
+        rule: "resolution".to_owned(),
+        premises: vec![new_assume, equiv1_step],
+        args: vec![ProofArg::Term(premise), ProofArg::Term(pool.bool_true())],
+        ..Default::default()
+    }))
 }
 
 pub fn add_refl_step(
