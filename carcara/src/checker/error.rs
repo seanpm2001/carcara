@@ -20,7 +20,7 @@ pub enum CheckerError {
 
     // Rule specific errors
     #[error(transparent)]
-    Resolution(#[from] ResolutionError),
+    Resolution(#[from] crate::resolution::ResolutionError),
 
     #[error(transparent)]
     Cong(#[from] CongruenceError),
@@ -169,24 +169,6 @@ pub enum EqualityError<T: TypeName> {
 
     #[error("expected {} '{got}' to be '{expected}'", T::NAME)]
     ExpectedToBe { expected: T, got: T },
-}
-
-#[derive(Debug, Error)]
-pub enum ResolutionError {
-    #[error("couldn't find tautology in clause")]
-    TautologyFailed,
-
-    #[error("pivot was not eliminated: '{0}'")]
-    RemainingPivot(Rc<Term>),
-
-    #[error("term in conclusion was not produced by resolution: '{0}'")]
-    ExtraTermInConclusion(Rc<Term>),
-
-    #[error("term produced by resolution is missing in conclusion: '{0}'")]
-    MissingTermInConclusion(Rc<Term>),
-
-    #[error("pivot was not found in clause: '{0}'")]
-    PivotNotFound(Rc<Term>),
 }
 
 struct DisplayIndexedOp<'a>(&'a ParamOperator, &'a Vec<Rc<Term>>);
