@@ -1,5 +1,6 @@
 mod polyeq;
 mod reflexivity;
+mod resolution;
 mod transitivity;
 
 use crate::{ast::*, CheckerError};
@@ -109,9 +110,7 @@ fn get_elaboration_function(rule: &str) -> Option<ElaborationFunc> {
         "eq_transitive" => transitivity::eq_transitive,
         "trans" => transitivity::trans,
         "refl" => reflexivity::refl,
-
-        // TODO: migrate these rules to new elaborator
-        "resolution" | "th_resolution" => return None,
+        "resolution" | "th_resolution" => resolution::resolution,
         _ => return None,
     })
 }
