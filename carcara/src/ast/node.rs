@@ -87,10 +87,18 @@ impl ProofNode {
     pub fn is_subproof(&self) -> bool {
         matches!(self, ProofNode::Subproof(_))
     }
+
+    /// Returns `Some` if the node is a `step` command.
+    pub fn as_step(&self) -> Option<&StepNode> {
+        match &self {
+            ProofNode::Step(s) => Some(s),
+            _ => None,
+        }
+    }
 }
 
 /// A `step` command.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StepNode {
     /// The step id.
     pub id: String,

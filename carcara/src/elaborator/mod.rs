@@ -1,42 +1,68 @@
+mod polyeq;
+mod reflexivity;
 mod transitivity;
 
 use crate::{ast::*, CheckerError};
 use indexmap::IndexSet;
+use polyeq::PolyeqElaborator;
 use std::collections::{HashMap, HashSet};
 
 #[allow(unused)]
 pub fn elaborate(pool: &mut PrimitivePool, root: &Rc<ProofNode>) -> Rc<ProofNode> {
-    mutate(pool, root, |pool, node| {
+    mutate(pool, root, |pool, context, node| {
         if let ProofNode::Step(s) = node.as_ref() {
             if let Some(func) = get_elaboration_function(&s.rule) {
-                return func(pool, s).unwrap(); // TODO: add proper error handling
+                return func(pool, context, s).unwrap(); // TODO: add proper error handling
             }
         }
         node.clone()
     })
 }
 
-type ElaborationFunc = fn(&mut PrimitivePool, &StepNode) -> Result<Rc<ProofNode>, CheckerError>;
+pub fn add_refl_step(
+    pool: &mut dyn TermPool,
+    a: Rc<Term>,
+    b: Rc<Term>,
+    id: String,
+    depth: usize,
+) -> Rc<ProofNode> {
+    Rc::new(ProofNode::Step(StepNode {
+        id,
+        depth,
+        clause: vec![build_term!(pool, (= {a} {b}))],
+        rule: "refl".to_owned(),
+        premises: Vec::new(),
+        args: Vec::new(),
+        discharge: Vec::new(),
+        previous_step: None,
+    }))
+}
+
+type ElaborationFunc =
+    fn(&mut PrimitivePool, &mut ContextStack, &StepNode) -> Result<Rc<ProofNode>, CheckerError>;
 
 fn get_elaboration_function(rule: &str) -> Option<ElaborationFunc> {
     Some(match rule {
         "eq_transitive" => transitivity::eq_transitive,
         "trans" => transitivity::trans,
+        "refl" => reflexivity::refl,
 
         // TODO: migrate these rules to new elaborator
-        "resolution" | "th_resolution" | "refl" => return None,
+        "resolution" | "th_resolution" => return None,
         _ => return None,
     })
 }
 
 fn mutate<F>(pool: &mut PrimitivePool, root: &Rc<ProofNode>, mut mutate_func: F) -> Rc<ProofNode>
 where
-    F: FnMut(&mut PrimitivePool, &Rc<ProofNode>) -> Rc<ProofNode>,
+    F: FnMut(&mut PrimitivePool, &mut ContextStack, &Rc<ProofNode>) -> Rc<ProofNode>,
 {
     let mut cache: HashMap<&Rc<ProofNode>, Rc<ProofNode>> = HashMap::new();
     let mut did_outbound: HashSet<&Rc<ProofNode>> = HashSet::new();
     let mut todo = vec![(root, false)];
+
     let mut outbound_premises_stack = vec![IndexSet::new()];
+    let mut context = ContextStack::new();
 
     while let Some((node, is_done)) = todo.pop() {
         if cache.contains_key(node) {
@@ -44,7 +70,7 @@ where
         }
 
         let mutated = match node.as_ref() {
-            ProofNode::Assume { .. } => mutate_func(pool, node),
+            ProofNode::Assume { .. } => mutate_func(pool, &mut context, node),
             ProofNode::Step(s) if !is_done => {
                 todo.push((node, true));
 
@@ -71,7 +97,7 @@ where
                     previous_step,
                     ..s.clone()
                 }));
-                mutate_func(pool, &new_node)
+                mutate_func(pool, &mut context, &new_node)
             }
             ProofNode::Subproof(s) if !is_done => {
                 assert!(
@@ -89,9 +115,11 @@ where
                 todo.push((node, true));
                 todo.push((&s.last_step, false));
                 outbound_premises_stack.push(IndexSet::new());
+                context.push(&s.args);
                 continue;
             }
             ProofNode::Subproof(s) => {
+                context.pop();
                 let outbound_premises =
                     outbound_premises_stack.pop().unwrap().into_iter().collect();
                 Rc::new(ProofNode::Subproof(SubproofNode {

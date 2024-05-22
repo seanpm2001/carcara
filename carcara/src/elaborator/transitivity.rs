@@ -63,7 +63,11 @@ fn find_and_trace_chain<'a, T>(
     }
 }
 
-pub fn trans(pool: &mut PrimitivePool, step: &StepNode) -> Result<Rc<ProofNode>, CheckerError> {
+pub fn trans(
+    pool: &mut PrimitivePool,
+    _: &mut ContextStack,
+    step: &StepNode,
+) -> Result<Rc<ProofNode>, CheckerError> {
     assert_eq!(step.clause.len(), 1);
 
     let conclusion_equality = match_term_err!((= t u) = &step.clause[0])?;
@@ -102,6 +106,7 @@ pub fn trans(pool: &mut PrimitivePool, step: &StepNode) -> Result<Rc<ProofNode>,
 
 pub fn eq_transitive(
     pool: &mut PrimitivePool,
+    _: &mut ContextStack,
     step: &StepNode,
 ) -> Result<Rc<ProofNode>, CheckerError> {
     let n = step.clause.len();
