@@ -1,6 +1,7 @@
 use carcara::{
+    ast,
     benchmarking::{CollectResults, CsvBenchmarkResults, RunMeasurement},
-    checker, parser, CarcaraOptions,
+    checker, elaborator, parser, CarcaraOptions,
 };
 use crossbeam_queue::ArrayQueue;
 use std::{
@@ -22,13 +23,11 @@ fn run_job<T: CollectResults + Default + Send>(
     results: &mut T,
     job: JobDescriptor,
     options: &CarcaraOptions,
-    // TODO: implement elaboration with new elaborator
-    #[allow(unused)] elaborate: bool,
+    elaborate: bool,
 ) -> Result<bool, carcara::Error> {
     let proof_file_name = job.proof_file.to_str().unwrap();
     let mut checker_stats = checker::CheckerStatistics {
         file_name: proof_file_name,
-        elaboration_time: Duration::ZERO,
         polyeq_time: Duration::ZERO,
         assume_time: Duration::ZERO,
         assume_core_time: Duration::ZERO,
@@ -44,7 +43,7 @@ fn run_job<T: CollectResults + Default + Send>(
         allow_int_real_subtyping: options.allow_int_real_subtyping,
         allow_unary_logical_ops: !options.strict,
     };
-    let (_, proof, mut pool) = parser::parse_instance(
+    let (prelude, proof, mut pool) = parser::parse_instance(
         BufReader::new(File::open(job.problem_file)?),
         BufReader::new(File::open(job.proof_file)?),
         config,
@@ -62,6 +61,17 @@ fn run_job<T: CollectResults + Default + Send>(
     let checking_result = checker.check_with_stats(&proof, &mut checker_stats);
     let checking = checking.elapsed();
 
+    let elaboration = if elaborate {
+        let elaboration = Instant::now();
+        let node = ast::ProofNode::from_commands(proof.commands);
+        let lia_options = options.lia_options.as_ref().map(|lia| (lia, &prelude));
+        let elaborated = elaborator::elaborate(&mut pool, &proof.premises, &node, lia_options);
+        elaborated.into_commands();
+        elaboration.elapsed()
+    } else {
+        Duration::ZERO
+    };
+
     let total = total.elapsed();
 
     checker_stats.results.add_run_measurement(
@@ -69,7 +79,7 @@ fn run_job<T: CollectResults + Default + Send>(
         RunMeasurement {
             parsing,
             checking,
-            elaboration: checker_stats.elaboration_time,
+            elaboration,
             scheduling: Duration::ZERO,
             total,
             polyeq: checker_stats.polyeq_time,

@@ -174,7 +174,6 @@ pub fn check<T: io::BufRead>(problem: T, proof: T, options: CarcaraOptions) -> R
     if options.stats {
         let mut checker_stats = CheckerStatistics {
             file_name: "this",
-            elaboration_time: Duration::ZERO,
             polyeq_time: Duration::ZERO,
             assume_time: Duration::ZERO,
             assume_core_time: Duration::ZERO,
@@ -190,7 +189,7 @@ pub fn check<T: io::BufRead>(problem: T, proof: T, options: CarcaraOptions) -> R
             RunMeasurement {
                 parsing: run_measures.parsing,
                 checking: run_measures.checking,
-                elaboration: checker_stats.elaboration_time,
+                elaboration: run_measures.elaboration,
                 scheduling: run_measures.scheduling,
                 total: run_measures.total,
                 polyeq: checker_stats.polyeq_time,
@@ -249,7 +248,6 @@ pub fn check_parallel<T: io::BufRead>(
     if options.stats {
         let mut checker_stats = CheckerStatistics {
             file_name: "this",
-            elaboration_time: Duration::ZERO,
             polyeq_time: Duration::ZERO,
             assume_time: Duration::ZERO,
             assume_core_time: Duration::ZERO,
@@ -265,7 +263,7 @@ pub fn check_parallel<T: io::BufRead>(
             RunMeasurement {
                 parsing: run_measures.parsing,
                 checking: run_measures.checking,
-                elaboration: checker_stats.elaboration_time,
+                elaboration: run_measures.elaboration,
                 scheduling: run_measures.scheduling,
                 total: run_measures.total,
                 polyeq: checker_stats.polyeq_time,
@@ -310,7 +308,6 @@ pub fn check_and_elaborate<T: io::BufRead>(
     let checking_result = if options.stats {
         let mut checker_stats = CheckerStatistics {
             file_name: "this",
-            elaboration_time: Duration::ZERO,
             polyeq_time: Duration::ZERO,
             assume_time: Duration::ZERO,
             assume_core_time: Duration::ZERO,
@@ -326,7 +323,7 @@ pub fn check_and_elaborate<T: io::BufRead>(
             RunMeasurement {
                 parsing: run_measures.parsing,
                 checking: run_measures.checking,
-                elaboration: checker_stats.elaboration_time,
+                elaboration: run_measures.elaboration,
                 scheduling: run_measures.scheduling,
                 total: run_measures.total,
                 polyeq: checker_stats.polyeq_time,

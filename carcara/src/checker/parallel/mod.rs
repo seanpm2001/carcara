@@ -147,7 +147,6 @@ impl<'c> ParallelProofChecker<'c> {
                 .map(|(i, schedule)| {
                     let mut local_stats = CheckerStatistics {
                         file_name: "",
-                        elaboration_time: Duration::ZERO,
                         polyeq_time: Duration::ZERO,
                         assume_time: Duration::ZERO,
                         assume_core_time: Duration::ZERO,
@@ -197,7 +196,6 @@ impl<'c> ParallelProofChecker<'c> {
                             stats.results = CR::combine(main, to_merge);
 
                             // Make sure other times are updated
-                            stats.elaboration_time += local_stats.elaboration_time;
                             stats.polyeq_time += local_stats.polyeq_time;
                             stats.assume_time += local_stats.assume_time;
                             stats.assume_core_time += local_stats.assume_core_time;

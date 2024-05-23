@@ -19,7 +19,6 @@ use std::{
 #[derive(Clone)]
 pub struct CheckerStatistics<'s, CR: CollectResults + Send + Default> {
     pub file_name: &'s str,
-    pub elaboration_time: Duration,
     pub polyeq_time: Duration,
     pub assume_time: Duration,
 
@@ -35,7 +34,6 @@ impl<CR: CollectResults + Send + Default> fmt::Debug for CheckerStatistics<'_, C
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CheckerStatistics")
             .field("file_name", &self.file_name)
-            .field("elaboration_time", &self.elaboration_time)
             .field("polyeq_time", &self.polyeq_time)
             .field("assume_time", &self.assume_time)
             .field("assume_core_time", &self.assume_core_time)
