@@ -513,14 +513,10 @@ fn slice_command(options: SliceCommandOptions) -> CliResult<Vec<ast::ProofComman
     let (_, proof, _) =
         parser::parse_instance(problem, proof, config).map_err(carcara::Error::from)?;
 
-    // TODO: reimplement slicing from arbitrary index
-    // This is to silence the "variant is never constructed" warning
-    let _ = CliError::InvalidSliceId(String::new());
+    let node = ast::ProofNode::from_commands_with_root_id(proof.commands, &options.from)
+        .ok_or_else(|| CliError::InvalidSliceId(options.from))?;
 
-    // This will always slice from the step that concludes the empty clause
-    let node = ast::ProofNode::from_commands(proof.commands);
-    let back_to_list = node.into_commands();
-    Ok(back_to_list)
+    Ok(node.into_commands())
 }
 
 fn generate_lia_problems_command(options: ParseCommandOptions, use_sharing: bool) -> CliResult<()> {
