@@ -10,14 +10,13 @@ use indexmap::IndexSet;
 use polyeq::PolyeqElaborator;
 use std::collections::{HashMap, HashSet};
 
-#[allow(unused)]
 pub fn elaborate(
     pool: &mut PrimitivePool,
     premises: &IndexSet<Rc<Term>>,
     root: &Rc<ProofNode>,
     lia_options: Option<(&LiaGenericOptions, &ProblemPrelude)>,
 ) -> Rc<ProofNode> {
-    mutate(root, |context, node| {
+    let result = mutate(root, |context, node| {
         match node.as_ref() {
             ProofNode::Assume { id, depth, term }
                 if context.is_empty() && !premises.contains(term) =>
@@ -37,6 +36,15 @@ pub fn elaborate(
             }
             ProofNode::Subproof(_) => unreachable!(),
             ProofNode::Assume { .. } => (),
+        }
+        node.clone()
+    });
+
+    mutate(&result, |_, node| {
+        if let Some(s) = node.as_step() {
+            if (s.rule == "resolution" || s.rule == "th_resolution") && !s.args.is_empty() {
+                return uncrowding::uncrowd_resolution(pool, s);
+            }
         }
         node.clone()
     })
@@ -234,12 +242,10 @@ impl IdHelper {
         current
     }
 
-    #[allow(unused)]
     fn push(&mut self) {
         self.stack.push(0);
     }
 
-    #[allow(unused)]
     fn pop(&mut self) {
         assert!(self.stack.len() >= 2, "can't pop last frame from the stack");
         self.stack.pop();

@@ -1,5 +1,5 @@
 use super::IdHelper;
-use crate::{ast::*, checker::error::CheckerError, resolution::*, utils::DedupIterator};
+use crate::{ast::*, resolution::*, utils::DedupIterator};
 use std::collections::{HashMap, HashSet};
 
 fn literal_to_term(pool: &mut dyn TermPool, (n, term): Literal) -> Rc<Term> {
@@ -48,12 +48,7 @@ fn apply_naive_resolution<'a>(
     current
 }
 
-#[allow(unused)]
-#[allow(clippy::unnecessary_wraps)]
-pub fn uncrowd_resolution(
-    pool: &mut PrimitivePool,
-    step: &StepNode,
-) -> Result<Rc<ProofNode>, CheckerError> {
+pub fn uncrowd_resolution(pool: &mut PrimitivePool, step: &StepNode) -> Rc<ProofNode> {
     let target_conclusion: HashSet<_> = step.clause.iter().map(Rc::remove_all_negations).collect();
 
     let premise_clauses: Vec<Vec<_>> = step
@@ -107,7 +102,13 @@ pub fn uncrowd_resolution(
         previous_clause = Some(clause);
     }
 
-    Ok(previous_node.unwrap())
+    // To make sure elaboration is idempotent, we need to change the last id match the original
+    // step's id
+    let mut result = previous_node.unwrap().as_ref().clone();
+    if let ProofNode::Step(s) = &mut result {
+        s.id = step.id.clone();
+    }
+    Rc::new(result)
 }
 
 fn add_partial_resolution_step<'a>(
@@ -119,7 +120,9 @@ fn add_partial_resolution_step<'a>(
     pivots: Vec<(Literal<'a>, bool)>,
 ) -> (Rc<ProofNode>, Vec<Literal<'a>>) {
     let conclusion = apply_naive_resolution(&premise_clauses, &pivots);
-    let contracted_conclusion = conclusion.iter().dedup().copied().collect();
+    let contracted_conclusion: Vec<_> = conclusion.iter().dedup().copied().collect();
+
+    let needs_contraction = contracted_conclusion.len() != conclusion.len();
 
     let args = pivots
         .into_iter()
@@ -143,18 +146,21 @@ fn add_partial_resolution_step<'a>(
         previous_step: None,
     }));
 
-    let contraction_step = Rc::new(ProofNode::Step(StepNode {
-        id: ids.next_id(),
-        depth,
-        clause: contracted_clause,
-        rule: "contraction".to_owned(),
-        premises: vec![resolution_step],
-        args: Vec::new(),
-        discharge: Vec::new(),
-        previous_step: None,
-    }));
-
-    (contraction_step, contracted_conclusion)
+    let final_step = if needs_contraction {
+        Rc::new(ProofNode::Step(StepNode {
+            id: ids.next_id(),
+            depth,
+            clause: contracted_clause,
+            rule: "contraction".to_owned(),
+            premises: vec![resolution_step],
+            args: Vec::new(),
+            discharge: Vec::new(),
+            previous_step: None,
+        }))
+    } else {
+        resolution_step
+    };
+    (final_step, contracted_conclusion)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -355,7 +361,7 @@ mod tests {
             unreachable!();
         };
 
-        let got = uncrowd_resolution(&mut pool, step).unwrap();
+        let got = uncrowd_resolution(&mut pool, step);
 
         let expected = b"
             (step t1 (cl x a b) :rule hole)
@@ -374,8 +380,7 @@ mod tests {
             (step t9.t4 (cl c d w) :rule contraction :premises (t9.t3))
             (step t9.t5 (cl d w d) :rule resolution :premises (t9.t4 t7) :args (c true))
             (step t9.t6 (cl d w) :rule contraction :premises (t9.t5))
-            (step t9.t7 (cl w) :rule resolution :premises (t9.t6 t8) :args (d true))
-            (step t9.t8 (cl w) :rule contraction :premises (t9.t7))
+            (step t9 (cl w) :rule resolution :premises (t9.t6 t8) :args (d true))
         ";
         let (_, expected) =
             parse_instance_with_pool(problem, expected, parser::Config::new(), &mut pool).unwrap();
