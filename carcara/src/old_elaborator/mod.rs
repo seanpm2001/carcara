@@ -44,6 +44,7 @@ impl Default for Elaborator {
     }
 }
 
+#[allow(deprecated)]
 impl Elaborator {
     pub fn new() -> Self {
         Self {

@@ -513,15 +513,11 @@ fn slice_command(options: SliceCommandOptions) -> CliResult<Vec<ast::ProofComman
     let (_, proof, _) =
         parser::parse_instance(problem, proof, config).map_err(carcara::Error::from)?;
 
-    let source_index = proof
-        .commands
-        .iter()
-        .position(|c| c.id() == options.from)
-        .ok_or_else(|| CliError::InvalidSliceId(options.from.to_owned()))?;
-
-    let diff =
-        carcara::old_elaborator::slice_proof(&proof.commands, source_index, options.max_distance);
-    Ok(carcara::old_elaborator::apply_diff(diff, proof.commands))
+    // TODO: reimplement slicing from arbitrary index
+    // This will always slice from the step that concludes the empty clause
+    let node = ast::proof_list_to_node(proof.commands);
+    let back_to_list = ast::proof_node_to_list(&node);
+    Ok(back_to_list)
 }
 
 fn generate_lia_problems_command(options: ParseCommandOptions, use_sharing: bool) -> CliResult<()> {

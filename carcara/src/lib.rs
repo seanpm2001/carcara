@@ -39,7 +39,7 @@
 pub mod ast;
 pub mod benchmarking;
 pub mod checker;
-mod elaborator;
+pub mod elaborator;
 pub mod old_elaborator;
 pub mod parser;
 mod resolution;
@@ -303,13 +303,12 @@ pub fn check_and_elaborate<T: io::BufRead>(
 
     let config = checker::Config::new()
         .strict(options.strict)
-        .ignore_unknown_rules(options.ignore_unknown_rules)
-        .lia_options(options.lia_options);
+        .ignore_unknown_rules(options.ignore_unknown_rules);
 
     // Checking
     let checking = Instant::now();
     let mut checker = checker::ProofChecker::new(&mut pool, config, &prelude);
-    if options.stats {
+    let checking_result = if options.stats {
         let mut checker_stats = CheckerStatistics {
             file_name: "this",
             elaboration_time: Duration::ZERO,
@@ -319,7 +318,7 @@ pub fn check_and_elaborate<T: io::BufRead>(
             results: OnlineBenchmarkResults::new(),
         };
 
-        let res = checker.check_and_elaborate_with_stats(proof, &mut checker_stats);
+        let res = checker.check_with_stats(&proof, &mut checker_stats);
         run_measures.checking = checking.elapsed();
         run_measures.total = total.elapsed();
 
@@ -341,8 +340,19 @@ pub fn check_and_elaborate<T: io::BufRead>(
 
         res
     } else {
-        checker.check_and_elaborate(proof)
-    }
+        checker.check(&proof)
+    }?;
+
+    // Elaborating
+    let node = ast::proof_list_to_node(proof.commands);
+    let lia_options = options.lia_options.as_ref().map(|lia| (lia, &prelude));
+    let elaborated = elaborator::elaborate(&mut pool, &proof.premises, &node, lia_options);
+
+    let elaborated = ast::Proof {
+        premises: proof.premises,
+        commands: ast::proof_node_to_list(&elaborated),
+    };
+    Ok((checking_result, elaborated))
 }
 
 pub fn generate_lia_smt_instances<T: io::BufRead>(

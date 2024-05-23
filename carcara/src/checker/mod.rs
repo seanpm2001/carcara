@@ -197,6 +197,7 @@ impl<'c> ProofChecker<'c> {
         }
     }
 
+    #[deprecated]
     pub fn check_and_elaborate(&mut self, mut proof: Proof) -> CarcaraResult<(bool, Proof)> {
         self.elaborator = Some(Elaborator::new());
         let result = self.check(&proof);
@@ -211,6 +212,7 @@ impl<'c> ProofChecker<'c> {
         Ok((self.is_holey, proof))
     }
 
+    #[deprecated]
     pub fn check_and_elaborate_with_stats<'s, CR: CollectResults + Send + Default>(
         &'s mut self,
         mut proof: Proof,

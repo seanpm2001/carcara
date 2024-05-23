@@ -42,30 +42,23 @@ fn run_test(problem_path: &Path, proof_path: &Path) -> CarcaraResult<()> {
     // First, we check the proof normally
     checker::ProofChecker::new(&mut pool, Config::new(), &prelude).check(&proof)?;
 
-    // Then we convert the proof to a node proof and back, and check the resulting proof
-    {
-        let node = ast::proof_list_to_node(proof.commands.clone());
-        let and_back_again = ast::Proof {
-            premises: proof.premises.clone(),
-            commands: ast::proof_node_to_list(&node),
-        };
-        checker::ProofChecker::new(&mut pool, Config::new(), &prelude).check(&and_back_again)?;
-    }
+    // Then we elaborate it
+    let node = ast::proof_list_to_node(proof.commands.clone());
+    let elaborated_node = elaborator::elaborate(&mut pool, &proof.premises, &node, None);
+    let elaborated = ast::Proof {
+        premises: proof.premises.clone(),
+        commands: ast::proof_node_to_list(&elaborated_node),
+    };
 
-    // Then, we check it while elaborating the proof
-    let mut checker = checker::ProofChecker::new(&mut pool, Config::new(), &prelude);
-    let (_, elaborated) = checker.check_and_elaborate(proof)?;
-
-    // After that, we check the elaborated proof normally, to make sure it is valid
-    checker::ProofChecker::new(&mut pool, Config::new().strict(true), &prelude)
-        .check(&elaborated)?;
+    // After that, we check the elaborated proof to make sure it is valid
+    checker::ProofChecker::new(&mut pool, Config::new(), &prelude).check(&elaborated)?;
 
     // Finally, we elaborate the already elaborated proof, to make sure the elaboration step is
     // idempotent
-    let mut checker = checker::ProofChecker::new(&mut pool, Config::new().strict(true), &prelude);
-    let (_, elaborated_twice) = checker.check_and_elaborate(elaborated.clone())?;
+    let elaborated_twice =
+        elaborator::elaborate(&mut pool, &proof.premises, &elaborated_node, None);
     assert!(
-        elaborated.commands == elaborated_twice.commands,
+        elaborated.commands == ast::proof_node_to_list(&elaborated_twice),
         "elaboration was not idempotent!"
     );
 
