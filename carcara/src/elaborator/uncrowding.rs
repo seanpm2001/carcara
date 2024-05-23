@@ -241,3 +241,145 @@ fn find_needed_contractions(
     }
     contractions
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::{self, parse_instance, parse_instance_with_pool, tests::*};
+
+    fn parse_premises(
+        pool: &mut PrimitivePool,
+        definitions: &str,
+        premises: Vec<Vec<&str>>,
+    ) -> Vec<Vec<Rc<Term>>> {
+        premises
+            .into_iter()
+            .map(|c| {
+                c.iter()
+                    .flat_map(|t| parse_terms(pool, definitions, [t]))
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn premises_to_literals(premises: &[Vec<Rc<Term>>]) -> Vec<Vec<Literal>> {
+        premises
+            .iter()
+            .map(|c| c.iter().map(Rc::remove_all_negations).collect())
+            .collect()
+    }
+
+    #[test]
+    fn test_find_needed_contractions() {
+        let mut pool = PrimitivePool::new();
+        let premises = vec![
+            vec!["x", "a", "b"],
+            vec!["(not x)", "y", "a", "c"],
+            vec!["(not y)", "z", "b"],
+            vec!["(not a)"],
+            vec!["(not z)", "c"],
+            vec!["d", "(not b)"],
+            vec!["d", "(not c)"],
+            vec!["(not d)"],
+        ];
+        let definitions = "
+            (declare-const a Bool)
+            (declare-const b Bool)
+            (declare-const c Bool)
+            (declare-const d Bool)
+            (declare-const x Bool)
+            (declare-const y Bool)
+            (declare-const z Bool)
+        ";
+        let premises = parse_premises(&mut pool, definitions, premises);
+        let premises = premises_to_literals(&premises);
+        let [a, b, c, d, x, y, z] = [
+            premises[1][2],
+            premises[0][2],
+            premises[1][3],
+            premises[5][0],
+            premises[0][0],
+            premises[1][1],
+            premises[2][1],
+        ];
+        let pivots = [x, y, a, z, b, c, d].map(|lit| (lit, true));
+
+        let naive_conclusion = apply_naive_resolution(&premises, &pivots);
+        let target_conclusion = HashSet::new();
+
+        let crowding_literals =
+            find_crowding_literals(&naive_conclusion, &target_conclusion, &premises, &pivots);
+
+        let expected = [
+            (a, CrowdingLiteralInfo { last_inclusion: 1, eliminator: 3 }),
+            (b, CrowdingLiteralInfo { last_inclusion: 2, eliminator: 5 }),
+            (c, CrowdingLiteralInfo { last_inclusion: 4, eliminator: 6 }),
+            (d, CrowdingLiteralInfo { last_inclusion: 6, eliminator: 7 }),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(crowding_literals, expected);
+
+        assert_eq!(find_needed_contractions(crowding_literals), [3, 6, 7]);
+    }
+
+    #[test]
+    fn test_uncrowd_resolution() {
+        let problem: &[u8] = b"
+            (declare-const a Bool)
+            (declare-const b Bool)
+            (declare-const c Bool)
+            (declare-const d Bool)
+            (declare-const x Bool)
+            (declare-const y Bool)
+            (declare-const z Bool)
+            (declare-const w Bool)
+        ";
+        let proof = b"
+            (step t1 (cl x a b) :rule hole)
+            (step t2 (cl (not x) y a c) :rule hole)
+            (step t3 (cl (not y) z b) :rule hole)
+            (step t4 (cl (not a)) :rule hole)
+            (step t5 (cl (not z) c) :rule hole)
+            (step t6 (cl d (not b) w) :rule hole)
+            (step t7 (cl d (not c)) :rule hole)
+            (step t8 (cl (not d)) :rule hole)
+            (step t9 (cl w)
+                :rule resolution
+                :premises (t1 t2 t3 t4 t5 t6 t7 t8)
+                :args (x true y true a true z true b true c true d true))
+        ";
+        let (_, proof, mut pool) = parse_instance(problem, proof, parser::Config::new()).unwrap();
+        let proof = ProofNode::from_commands(proof.commands);
+        let ProofNode::Step(step) = proof.as_ref() else {
+            unreachable!();
+        };
+
+        let got = uncrowd_resolution(&mut pool, step).unwrap();
+
+        let expected = b"
+            (step t1 (cl x a b) :rule hole)
+            (step t2 (cl (not x) y a c) :rule hole)
+            (step t3 (cl (not y) z b) :rule hole)
+            (step t4 (cl (not a)) :rule hole)
+            (step t5 (cl (not z) c) :rule hole)
+            (step t6 (cl d (not b) w) :rule hole)
+            (step t7 (cl d (not c)) :rule hole)
+            (step t8 (cl (not d)) :rule hole)
+            (step t9.t1 (cl a b a c z b) :rule resolution :premises (t1 t2 t3)
+                :args (x true y true))
+            (step t9.t2 (cl a b c z) :rule contraction :premises (t9.t1))
+            (step t9.t3 (cl c c d w) :rule resolution :premises (t9.t2 t4 t5 t6)
+                :args (a true z true b true))
+            (step t9.t4 (cl c d w) :rule contraction :premises (t9.t3))
+            (step t9.t5 (cl d w d) :rule resolution :premises (t9.t4 t7) :args (c true))
+            (step t9.t6 (cl d w) :rule contraction :premises (t9.t5))
+            (step t9.t7 (cl w) :rule resolution :premises (t9.t6 t8) :args (d true))
+            (step t9.t8 (cl w) :rule contraction :premises (t9.t7))
+        ";
+        let (_, expected) =
+            parse_instance_with_pool(problem, expected, parser::Config::new(), &mut pool).unwrap();
+        let expected = ProofNode::from_commands(expected.commands);
+        assert!(compare_nodes(&expected, &got));
+    }
+}
