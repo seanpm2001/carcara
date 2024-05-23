@@ -26,6 +26,19 @@ pub enum ProofNode {
 }
 
 impl ProofNode {
+    /// Creates a proof node from a list of commands.
+    ///
+    /// The root node will be the fist command that concludes an empty clause, or, if no command
+    /// does so, the last command in the vector.
+    pub fn from_commands(commands: Vec<ProofCommand>) -> Rc<Self> {
+        proof_list_to_node(commands, None).unwrap()
+    }
+
+    /// Creates a proof node from a list of commands, specifying a command id to be the root node.
+    pub fn from_commands_with_root_id(commands: Vec<ProofCommand>, root: &str) -> Option<Rc<Self>> {
+        proof_list_to_node(commands, Some(root))
+    }
+
     /// Returns the unique id of this command.
     ///
     /// For subproofs, this is the id of the last step in the subproof.
@@ -106,6 +119,10 @@ impl ProofNode {
 }
 
 impl Rc<ProofNode> {
+    pub fn into_commands(&self) -> Vec<ProofCommand> {
+        proof_node_to_list(self)
+    }
+
     /// Visits every node of the proof, in postorder, and calls `visit_func` on them.
     pub fn traverse<F>(&self, mut visit_func: F)
     where
@@ -217,7 +234,7 @@ pub struct SubproofNode {
 }
 
 /// Converts a list of proof commands into a `ProofNode`.
-pub fn proof_list_to_node(commands: Vec<ProofCommand>) -> Rc<ProofNode> {
+fn proof_list_to_node(commands: Vec<ProofCommand>, root_id: Option<&str>) -> Option<Rc<ProofNode>> {
     use indexmap::IndexSet;
 
     struct Frame {
@@ -312,14 +329,19 @@ pub fn proof_list_to_node(commands: Vec<ProofCommand>) -> Rc<ProofNode> {
         stack.last_mut().unwrap().accumulator.push(Rc::new(node));
     };
 
-    new_root_proof
-        .into_iter()
-        .find(|node| node.clause().is_empty())
-        .unwrap()
+    if let Some(root_id) = root_id {
+        new_root_proof.into_iter().find(|node| node.id() == root_id)
+    } else {
+        new_root_proof
+            .iter()
+            .find(|node| node.clause().is_empty())
+            .or(new_root_proof.last())
+            .cloned()
+    }
 }
 
 /// Converts a `ProofNode` into a list of proof commands.
-pub fn proof_node_to_list(root: &Rc<ProofNode>) -> Vec<ProofCommand> {
+fn proof_node_to_list(root: &Rc<ProofNode>) -> Vec<ProofCommand> {
     use std::collections::{HashMap, HashSet};
 
     let mut stack: Vec<Vec<ProofCommand>> = vec![Vec::new()];

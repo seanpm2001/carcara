@@ -343,13 +343,13 @@ pub fn check_and_elaborate<T: io::BufRead>(
     }?;
 
     // Elaborating
-    let node = ast::proof_list_to_node(proof.commands);
+    let node = ast::ProofNode::from_commands(proof.commands);
     let lia_options = options.lia_options.as_ref().map(|lia| (lia, &prelude));
     let elaborated = elaborator::elaborate(&mut pool, &proof.premises, &node, lia_options);
 
     let elaborated = ast::Proof {
         premises: proof.premises,
-        commands: ast::proof_node_to_list(&elaborated),
+        commands: elaborated.into_commands(),
     };
     Ok((checking_result, elaborated))
 }

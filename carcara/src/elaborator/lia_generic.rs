@@ -204,7 +204,7 @@ fn insert_solver_proof(
     root_id: &str,
     depth: usize,
 ) -> Rc<ProofNode> {
-    let proof = proof_list_to_node(commands);
+    let proof = ProofNode::from_commands(commands);
 
     let mut ids = IdHelper::new(root_id);
     let subproof_id = ids.next_id();

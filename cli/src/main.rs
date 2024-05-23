@@ -518,8 +518,8 @@ fn slice_command(options: SliceCommandOptions) -> CliResult<Vec<ast::ProofComman
     let _ = CliError::InvalidSliceId(String::new());
 
     // This will always slice from the step that concludes the empty clause
-    let node = ast::proof_list_to_node(proof.commands);
-    let back_to_list = ast::proof_node_to_list(&node);
+    let node = ast::ProofNode::from_commands(proof.commands);
+    let back_to_list = node.into_commands();
     Ok(back_to_list)
 }
 
