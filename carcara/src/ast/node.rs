@@ -88,12 +88,85 @@ impl ProofNode {
         matches!(self, ProofNode::Subproof(_))
     }
 
+    /// Returns `Some` if the node is an `assume` command.
+    pub fn as_assume(&self) -> Option<(&str, usize, &Rc<Term>)> {
+        match &self {
+            ProofNode::Assume { id, depth, term } => Some((id, *depth, term)),
+            _ => None,
+        }
+    }
+
     /// Returns `Some` if the node is a `step` command.
     pub fn as_step(&self) -> Option<&StepNode> {
         match &self {
             ProofNode::Step(s) => Some(s),
             _ => None,
         }
+    }
+}
+
+impl Rc<ProofNode> {
+    /// Visits every node of the proof, in postorder, and calls `visit_func` on them.
+    pub fn traverse<F>(&self, mut visit_func: F)
+    where
+        F: FnMut(&Rc<ProofNode>),
+    {
+        use std::collections::HashSet;
+
+        let mut seen: HashSet<&Rc<ProofNode>> = HashSet::new();
+        let mut todo: Vec<(&Rc<ProofNode>, bool)> = vec![(self, false)];
+        let mut did_outbound: HashSet<&Rc<ProofNode>> = HashSet::new();
+
+        loop {
+            let Some((node, is_done)) = todo.pop() else {
+                return;
+            };
+            if !is_done && seen.contains(&node) {
+                continue;
+            }
+
+            match node.as_ref() {
+                ProofNode::Step(s) if !is_done => {
+                    todo.push((node, true));
+
+                    if let Some(previous) = &s.previous_step {
+                        todo.push((previous, false));
+                    }
+
+                    let premises_and_discharge = s.premises.iter().chain(s.discharge.iter()).rev();
+                    todo.extend(premises_and_discharge.map(|node| (node, false)));
+                    continue;
+                }
+                ProofNode::Subproof(s) if !is_done => {
+                    // First, we add all of the subproof's outbound premises if he haven't already
+                    if !did_outbound.contains(&node) {
+                        did_outbound.insert(node);
+                        todo.push((node, false));
+                        todo.extend(s.outbound_premises.iter().map(|premise| (premise, false)));
+                        continue;
+                    }
+
+                    todo.push((node, true));
+                    todo.push((&s.last_step, false));
+                    continue;
+                }
+                _ => (),
+            };
+
+            visit_func(node);
+            seen.insert(node);
+        }
+    }
+
+    /// Returns a vector containing this proofs root-level assumptions
+    pub fn get_assumptions(&self) -> Vec<Rc<ProofNode>> {
+        let mut result = Vec::new();
+        self.traverse(|node| {
+            if let ProofNode::Assume { depth: 0, .. } = node.as_ref() {
+                result.push(node.clone());
+            }
+        });
+        result
     }
 }
 

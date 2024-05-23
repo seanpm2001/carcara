@@ -1,9 +1,10 @@
+mod lia_generic;
 mod polyeq;
 mod reflexivity;
 mod resolution;
 mod transitivity;
 
-use crate::{ast::*, CheckerError};
+use crate::{ast::*, CheckerError, LiaGenericOptions};
 use indexmap::IndexSet;
 use polyeq::PolyeqElaborator;
 use std::collections::{HashMap, HashSet};
@@ -13,8 +14,9 @@ pub fn elaborate(
     pool: &mut PrimitivePool,
     premises: &IndexSet<Rc<Term>>,
     root: &Rc<ProofNode>,
+    lia_options: Option<(&LiaGenericOptions, &ProblemPrelude)>,
 ) -> Rc<ProofNode> {
-    mutate(pool, root, |pool, context, node| {
+    mutate(root, |context, node| {
         match node.as_ref() {
             ProofNode::Assume { id, depth, term }
                 if context.is_empty() && !premises.contains(term) =>
@@ -24,6 +26,12 @@ pub fn elaborate(
             ProofNode::Step(s) => {
                 if let Some(func) = get_elaboration_function(&s.rule) {
                     return func(pool, context, s).unwrap(); // TODO: add proper error handling
+                }
+                if let Some((lia_options, prelude)) = lia_options {
+                    if s.rule == "lia_generic" {
+                        return lia_generic::lia_generic(pool, s, prelude, lia_options)
+                            .unwrap_or_else(|| node.clone());
+                    }
                 }
             }
             ProofNode::Subproof(_) => unreachable!(),
@@ -115,9 +123,9 @@ fn get_elaboration_function(rule: &str) -> Option<ElaborationFunc> {
     })
 }
 
-fn mutate<F>(pool: &mut PrimitivePool, root: &Rc<ProofNode>, mut mutate_func: F) -> Rc<ProofNode>
+fn mutate<F>(root: &Rc<ProofNode>, mut mutate_func: F) -> Rc<ProofNode>
 where
-    F: FnMut(&mut PrimitivePool, &mut ContextStack, &Rc<ProofNode>) -> Rc<ProofNode>,
+    F: FnMut(&mut ContextStack, &Rc<ProofNode>) -> Rc<ProofNode>,
 {
     let mut cache: HashMap<&Rc<ProofNode>, Rc<ProofNode>> = HashMap::new();
     let mut did_outbound: HashSet<&Rc<ProofNode>> = HashSet::new();
@@ -132,7 +140,7 @@ where
         }
 
         let mutated = match node.as_ref() {
-            ProofNode::Assume { .. } => mutate_func(pool, &mut context, node),
+            ProofNode::Assume { .. } => mutate_func(&mut context, node),
             ProofNode::Step(s) if !is_done => {
                 todo.push((node, true));
 
@@ -159,7 +167,7 @@ where
                     previous_step,
                     ..s.clone()
                 }));
-                mutate_func(pool, &mut context, &new_node)
+                mutate_func(&mut context, &new_node)
             }
             ProofNode::Subproof(s) if !is_done => {
                 assert!(
