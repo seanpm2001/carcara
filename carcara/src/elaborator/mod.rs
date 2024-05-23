@@ -3,6 +3,7 @@ mod polyeq;
 mod reflexivity;
 mod resolution;
 mod transitivity;
+mod uncrowding;
 
 use crate::{ast::*, CheckerError, LiaGenericOptions};
 use indexmap::IndexSet;
