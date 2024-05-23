@@ -172,7 +172,7 @@ fn binary_resolution<'a, C: ClauseCollection<'a>>(
     pool: &mut dyn TermPool,
     current: &mut C,
     next: &'a [Rc<Term>],
-    pivot: ResolutionTerm<'a>,
+    pivot: Literal<'a>,
     is_pivot_in_current: bool,
 ) -> Result<(), ResolutionError> {
     let negated_pivot = (pivot.0 + 1, pivot.1);

@@ -20,21 +20,21 @@ pub enum ResolutionError {
     PivotNotFound(Rc<Term>),
 }
 
-pub type ResolutionTerm<'a> = (u32, &'a Rc<Term>);
+pub type Literal<'a> = (u32, &'a Rc<Term>);
 
 /// A collection that can be used as a clause during resolution.
-pub trait ClauseCollection<'a>: FromIterator<ResolutionTerm<'a>> {
-    fn insert_term(&mut self, item: ResolutionTerm<'a>);
+pub trait ClauseCollection<'a>: FromIterator<Literal<'a>> {
+    fn insert_term(&mut self, item: Literal<'a>);
 
-    fn remove_term(&mut self, item: &ResolutionTerm<'a>) -> bool;
+    fn remove_term(&mut self, item: &Literal<'a>) -> bool;
 }
 
-impl<'a> ClauseCollection<'a> for Vec<ResolutionTerm<'a>> {
-    fn insert_term(&mut self, item: ResolutionTerm<'a>) {
+impl<'a> ClauseCollection<'a> for Vec<Literal<'a>> {
+    fn insert_term(&mut self, item: Literal<'a>) {
         self.push(item);
     }
 
-    fn remove_term(&mut self, item: &ResolutionTerm<'a>) -> bool {
+    fn remove_term(&mut self, item: &Literal<'a>) -> bool {
         if let Some(pos) = self.iter().position(|x| x == item) {
             self.remove(pos);
             true
@@ -44,18 +44,18 @@ impl<'a> ClauseCollection<'a> for Vec<ResolutionTerm<'a>> {
     }
 }
 
-impl<'a> ClauseCollection<'a> for IndexSet<ResolutionTerm<'a>> {
-    fn insert_term(&mut self, item: ResolutionTerm<'a>) {
+impl<'a> ClauseCollection<'a> for IndexSet<Literal<'a>> {
+    fn insert_term(&mut self, item: Literal<'a>) {
         self.insert(item);
     }
 
-    fn remove_term(&mut self, item: &ResolutionTerm<'a>) -> bool {
+    fn remove_term(&mut self, item: &Literal<'a>) -> bool {
         self.remove(item)
     }
 }
 
 /// Undoes the transformation done by `Rc<Term>::remove_all_negations`.
-pub fn unremove_all_negations(pool: &mut dyn TermPool, (n, term): ResolutionTerm) -> Rc<Term> {
+pub fn unremove_all_negations(pool: &mut dyn TermPool, (n, term): Literal) -> Rc<Term> {
     let mut term = term.clone();
     for _ in 0..n {
         term = build_term!(pool, (not { term }));
