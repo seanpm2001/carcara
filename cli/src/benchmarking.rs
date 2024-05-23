@@ -22,7 +22,8 @@ fn run_job<T: CollectResults + Default + Send>(
     results: &mut T,
     job: JobDescriptor,
     options: &CarcaraOptions,
-    elaborate: bool,
+    // TODO: implement elaboration with new elaborator
+    #[allow(unused)] elaborate: bool,
 ) -> Result<bool, carcara::Error> {
     let proof_file_name = job.proof_file.to_str().unwrap();
     let mut checker_stats = checker::CheckerStatistics {
@@ -43,7 +44,7 @@ fn run_job<T: CollectResults + Default + Send>(
         allow_int_real_subtyping: options.allow_int_real_subtyping,
         allow_unary_logical_ops: !options.strict,
     };
-    let (prelude, proof, mut pool) = parser::parse_instance(
+    let (_, proof, mut pool) = parser::parse_instance(
         BufReader::new(File::open(job.problem_file)?),
         BufReader::new(File::open(job.proof_file)?),
         config,
@@ -54,17 +55,11 @@ fn run_job<T: CollectResults + Default + Send>(
         .strict(options.strict)
         .ignore_unknown_rules(options.ignore_unknown_rules)
         .lia_options(options.lia_options.clone());
-    let mut checker = checker::ProofChecker::new(&mut pool, config, &prelude);
+    let mut checker = checker::ProofChecker::new(&mut pool, config);
 
     let checking = Instant::now();
 
-    let checking_result = if elaborate {
-        checker
-            .check_and_elaborate_with_stats(proof, &mut checker_stats)
-            .map(|(is_holey, _)| is_holey)
-    } else {
-        checker.check_with_stats(&proof, &mut checker_stats)
-    };
+    let checking_result = checker.check_with_stats(&proof, &mut checker_stats);
     let checking = checking.elapsed();
 
     let total = total.elapsed();

@@ -514,6 +514,9 @@ fn slice_command(options: SliceCommandOptions) -> CliResult<Vec<ast::ProofComman
         parser::parse_instance(problem, proof, config).map_err(carcara::Error::from)?;
 
     // TODO: reimplement slicing from arbitrary index
+    // This is to silence the "variant is never constructed" warning
+    let _ = CliError::InvalidSliceId(String::new());
+
     // This will always slice from the step that concludes the empty clause
     let node = ast::proof_list_to_node(proof.commands);
     let back_to_list = ast::proof_node_to_list(&node);

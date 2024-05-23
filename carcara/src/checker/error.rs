@@ -4,7 +4,7 @@ use crate::{
     utils::{Range, TypeName},
 };
 use rug::{Integer, Rational};
-use std::{fmt, io};
+use std::fmt;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -30,9 +30,6 @@ pub enum CheckerError {
 
     #[error(transparent)]
     LinearArithmetic(#[from] LinearArithmeticError),
-
-    #[error(transparent)]
-    LiaGeneric(#[from] LiaGenericError),
 
     #[error(transparent)]
     Subproof(#[from] SubproofError),
@@ -271,36 +268,6 @@ pub enum LinearArithmeticError {
 
     #[error("expected term '{0}' to be less than or equal to term '{1}'")]
     ExpectedLessEq(Rc<Term>, Rc<Term>),
-}
-
-#[derive(Debug, Error)]
-pub enum LiaGenericError {
-    #[error("failed to spawn solver process")]
-    FailedSpawnSolver(io::Error),
-
-    #[error("failed to write to solver stdin")]
-    FailedWriteToSolverStdin(io::Error),
-
-    #[error("error while waiting for solver to exit")]
-    FailedWaitForSolver(io::Error),
-
-    #[error("solver gave invalid output")]
-    SolverGaveInvalidOutput,
-
-    #[error("solver output not unsat")]
-    OutputNotUnsat,
-
-    #[error("solver timed out when solving problem")]
-    SolverTimeout,
-
-    #[error(
-        "solver returned non-zero exit code: {}",
-        if let Some(i) = .0 { format!("{}", i) } else { "none".to_owned() }
-    )]
-    NonZeroExitCode(Option<i32>),
-
-    #[error("error in inner proof: {0}")]
-    InnerProofError(Box<crate::Error>),
 }
 
 /// Errors relevant to all rules that end subproofs (not just the `subproof` rule).

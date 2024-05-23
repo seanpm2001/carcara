@@ -1,9 +1,40 @@
 use super::*;
-use crate::{checker, checker::error::LiaGenericError, parser, CarcaraResult, LiaGenericOptions};
+use crate::{checker, parser, CarcaraResult, LiaGenericOptions};
 use std::{
-    io::{BufRead, Write},
+    io::{self, BufRead, Write},
     process::{Command, Stdio},
 };
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum LiaGenericError {
+    #[error("failed to spawn solver process")]
+    FailedSpawnSolver(io::Error),
+
+    #[error("failed to write to solver stdin")]
+    FailedWriteToSolverStdin(io::Error),
+
+    #[error("error while waiting for solver to exit")]
+    FailedWaitForSolver(io::Error),
+
+    #[error("solver gave invalid output")]
+    SolverGaveInvalidOutput,
+
+    #[error("solver output not unsat")]
+    OutputNotUnsat,
+
+    #[error("solver timed out when solving problem")]
+    SolverTimeout,
+
+    #[error(
+        "solver returned non-zero exit code: {}",
+        if let Some(i) = .0 { format!("{}", i) } else { "none".to_owned() }
+    )]
+    NonZeroExitCode(Option<i32>),
+
+    #[error("error in inner proof: {0}")]
+    InnerProofError(Box<crate::Error>),
+}
 
 fn get_problem_string(conclusion: &[Rc<Term>], prelude: &ProblemPrelude) -> String {
     use std::fmt::Write;
@@ -102,13 +133,13 @@ fn parse_and_check_solver_proof(
         allow_unary_logical_ops: true,
     };
     let mut parser = parser::Parser::new(pool, config, problem)?;
-    let (prelude, premises) = parser.parse_problem()?;
+    let (_, premises) = parser.parse_problem()?;
     parser.reset(proof)?;
     let commands = parser.parse_proof()?;
     let proof = Proof { premises, commands };
 
     let config = checker::Config::new().ignore_unknown_rules(true);
-    checker::ProofChecker::new(pool, config, &prelude).check(&proof)?;
+    checker::ProofChecker::new(pool, config).check(&proof)?;
     Ok(proof.commands)
 }
 

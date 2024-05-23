@@ -33,14 +33,14 @@ fn run_parallel_checker_test(
 fn run_test(problem_path: &Path, proof_path: &Path) -> CarcaraResult<()> {
     use checker::Config;
 
-    let (prelude, proof, mut pool) = parser::parse_instance(
+    let (_, proof, mut pool) = parser::parse_instance(
         io::BufReader::new(fs::File::open(problem_path)?),
         io::BufReader::new(fs::File::open(proof_path)?),
         parser::Config::new(),
     )?;
 
     // First, we check the proof normally
-    checker::ProofChecker::new(&mut pool, Config::new(), &prelude).check(&proof)?;
+    checker::ProofChecker::new(&mut pool, Config::new()).check(&proof)?;
 
     // Then we elaborate it
     let node = ast::proof_list_to_node(proof.commands.clone());
@@ -51,7 +51,7 @@ fn run_test(problem_path: &Path, proof_path: &Path) -> CarcaraResult<()> {
     };
 
     // After that, we check the elaborated proof to make sure it is valid
-    checker::ProofChecker::new(&mut pool, Config::new(), &prelude).check(&elaborated)?;
+    checker::ProofChecker::new(&mut pool, Config::new()).check(&elaborated)?;
 
     // Finally, we elaborate the already elaborated proof, to make sure the elaboration step is
     // idempotent
