@@ -95,20 +95,51 @@ pub fn uncrowd_resolution(pool: &mut PrimitivePool, step: &StepNode) -> Rc<Proof
             .chain(premise_clauses[previous_cut..cut].iter().cloned())
             .collect();
         let pivots: Vec<_> = (&mut pivots).take(premise_nodes.len() - 1).collect();
-        let (node, clause) =
-            add_partial_resolution_step(pool, &mut ids, step.depth, premise_nodes, clauses, pivots);
+        let (node, clause) = add_partial_resolution_step(
+            pool,
+            &mut ids,
+            step.depth,
+            premise_nodes,
+            clauses,
+            pivots,
+            &step.clause,
+        );
         previous_cut = cut;
         previous_node = Some(node);
         previous_clause = Some(clause);
     }
 
+    let mut final_step = previous_node.unwrap().as_step().unwrap().clone();
+
+    if final_step.clause.len() != step.clause.len() {
+        let clause = get_or_intro_clause(&final_step.clause, &step.clause);
+        final_step = StepNode {
+            id: ids.next_id(),
+            depth: step.depth,
+            clause,
+            rule: "or_intro".to_owned(),
+            premises: vec![Rc::new(ProofNode::Step(final_step))],
+            ..Default::default()
+        }
+    }
+
+    // We might need to add a reordering step
+    if final_step.clause != step.clause {
+        assert!(final_step.clause.iter().collect::<HashSet<_>>() == step.clause.iter().collect());
+        final_step = StepNode {
+            id: ids.next_id(),
+            depth: step.depth,
+            clause: step.clause.clone(),
+            rule: "reordering".to_owned(),
+            premises: vec![Rc::new(ProofNode::Step(final_step))],
+            ..Default::default()
+        }
+    }
+
     // To make sure elaboration is idempotent, we need to change the last id match the original
     // step's id
-    let mut result = previous_node.unwrap().as_ref().clone();
-    if let ProofNode::Step(s) = &mut result {
-        s.id = step.id.clone();
-    }
-    Rc::new(result)
+    final_step.id = step.id.clone();
+    Rc::new(ProofNode::Step(final_step))
 }
 
 fn add_partial_resolution_step<'a>(
@@ -118,6 +149,7 @@ fn add_partial_resolution_step<'a>(
     premises: Vec<Rc<ProofNode>>,
     premise_clauses: Vec<Vec<Literal<'a>>>,
     pivots: Vec<(Literal<'a>, bool)>,
+    final_target: &[Rc<Term>],
 ) -> (Rc<ProofNode>, Vec<Literal<'a>>) {
     let conclusion = apply_naive_resolution(&premise_clauses, &pivots);
     let contracted_conclusion: Vec<_> = conclusion.iter().dedup().copied().collect();
@@ -146,8 +178,12 @@ fn add_partial_resolution_step<'a>(
         previous_step: None,
     }));
 
-    let final_step = if needs_contraction {
-        Rc::new(ProofNode::Step(StepNode {
+    if resolution_step.clause() == final_target {
+        return (resolution_step, contracted_conclusion);
+    }
+
+    if needs_contraction {
+        let contraction_step = Rc::new(ProofNode::Step(StepNode {
             id: ids.next_id(),
             depth,
             clause: contracted_clause,
@@ -156,11 +192,35 @@ fn add_partial_resolution_step<'a>(
             args: Vec::new(),
             discharge: Vec::new(),
             previous_step: None,
-        }))
+        }));
+        (contraction_step, contracted_conclusion)
     } else {
-        resolution_step
-    };
-    (final_step, contracted_conclusion)
+        (resolution_step, conclusion)
+    }
+}
+
+fn get_or_intro_clause(current: &[Rc<Term>], target: &[Rc<Term>]) -> Vec<Rc<Term>> {
+    let mut missing: HashMap<&Rc<Term>, usize> = HashMap::new();
+    for term in target {
+        *missing.entry(term).or_default() += 1;
+    }
+    for term in current {
+        match missing.get_mut(term) {
+            Some(0) | None => panic!("current clause is not a subset of target clause!"),
+            Some(1) => {
+                missing.remove(term);
+            }
+            Some(count) => *count -= 1,
+        }
+    }
+
+    let mut result = current.to_vec();
+    for (term, n) in missing {
+        for _ in 0..n {
+            result.push(term.clone());
+        }
+    }
+    result
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
