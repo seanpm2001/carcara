@@ -1,6 +1,7 @@
 mod lia_generic;
 mod polyeq;
 mod reflexivity;
+mod reordering;
 mod resolution;
 mod transitivity;
 mod uncrowding;
@@ -40,14 +41,16 @@ pub fn elaborate(
         node.clone()
     });
 
-    mutate(&result, |_, node| {
+    let result = mutate(&result, |_, node| {
         if let Some(s) = node.as_step() {
             if (s.rule == "resolution" || s.rule == "th_resolution") && !s.args.is_empty() {
                 return uncrowding::uncrowd_resolution(pool, s);
             }
         }
         node.clone()
-    })
+    });
+
+    reordering::remove_reorderings(&result)
 }
 
 fn elaborate_assume(
