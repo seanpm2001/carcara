@@ -2,14 +2,6 @@ use super::IdHelper;
 use crate::{ast::*, resolution::*, utils::DedupIterator};
 use std::collections::{HashMap, HashSet};
 
-fn literal_to_term(pool: &mut dyn TermPool, (n, term): Literal) -> Rc<Term> {
-    let mut term = term.clone();
-    for _ in 0..n {
-        term = build_term!(pool, (not { term }));
-    }
-    term
-}
-
 fn literals_to_clause(pool: &mut dyn TermPool, clause: &[Literal]) -> Vec<Rc<Term>> {
     clause.iter().map(|l| literal_to_term(pool, *l)).collect()
 }

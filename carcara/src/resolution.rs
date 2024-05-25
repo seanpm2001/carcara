@@ -54,8 +54,9 @@ impl<'a> ClauseCollection<'a> for IndexSet<Literal<'a>> {
     }
 }
 
-/// Undoes the transformation done by `Rc<Term>::remove_all_negations`.
-pub fn unremove_all_negations(pool: &mut dyn TermPool, (n, term): Literal) -> Rc<Term> {
+/// Transformas a `Literal` into an `Rc<Term>`, by undoing the transformation done by
+/// `Rc<Term>::remove_all_negations`.
+pub fn literal_to_term(pool: &mut dyn TermPool, (n, term): Literal) -> Rc<Term> {
     let mut term = term.clone();
     for _ in 0..n {
         term = build_term!(pool, (not { term }));
@@ -148,7 +149,7 @@ pub fn greedy_resolution(
                 false
             } else if try_eliminate(below) {
                 if tracing {
-                    pivot_trace.push((unremove_all_negations(pool, (n as u32 - 1, inner)), true));
+                    pivot_trace.push((literal_to_term(pool, (n as u32 - 1, inner)), true));
                 }
                 true
             } else if try_eliminate(above) {
@@ -208,7 +209,7 @@ pub fn greedy_resolution(
                 }
             }
         }
-        let pivot = unremove_all_negations(pool, (*i as u32, pivot));
+        let pivot = literal_to_term(pool, (*i as u32, pivot));
         Err(ResolutionError::RemainingPivot(pivot))
     } else {
         // This is the general case, where all pivots have been eliminated. In this case, the
@@ -217,7 +218,7 @@ pub fn greedy_resolution(
             // By construction, the working clause is a subset of the conclusion. Therefore, we
             // only need to check that all terms in the conclusion are also in the working clause
             if !working_clause.contains(&(i, t)) {
-                let t = unremove_all_negations(pool, (i as u32, t));
+                let t = literal_to_term(pool, (i as u32, t));
                 return Err(ResolutionError::ExtraTermInConclusion(t));
             }
         }
