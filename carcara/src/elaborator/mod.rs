@@ -11,13 +11,27 @@ use indexmap::IndexSet;
 use polyeq::PolyeqElaborator;
 use std::collections::{HashMap, HashSet};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ResolutionGranularity {
+    Pivots,
+    Uncrowd,
+    Reordering,
+}
+
+impl Default for ResolutionGranularity {
+    fn default() -> Self {
+        Self::Reordering
+    }
+}
+
 pub fn elaborate(
     pool: &mut PrimitivePool,
     premises: &IndexSet<Rc<Term>>,
     root: &Rc<ProofNode>,
     lia_options: Option<(&LiaGenericOptions, &ProblemPrelude)>,
+    resolution_granularity: ResolutionGranularity,
 ) -> Rc<ProofNode> {
-    let result = mutate(root, |context, node| {
+    let elaborated = mutate(root, |context, node| {
         match node.as_ref() {
             ProofNode::Assume { id, depth, term }
                 if context.is_empty() && !premises.contains(term) =>
@@ -41,16 +55,23 @@ pub fn elaborate(
         node.clone()
     });
 
-    let result = mutate(&result, |_, node| {
-        if let Some(s) = node.as_step() {
-            if (s.rule == "resolution" || s.rule == "th_resolution") && !s.args.is_empty() {
-                return uncrowding::uncrowd_resolution(pool, s);
+    if resolution_granularity >= ResolutionGranularity::Uncrowd {
+        let uncrowded = mutate(&elaborated, |_, node| {
+            if let Some(s) = node.as_step() {
+                if (s.rule == "resolution" || s.rule == "th_resolution") && !s.args.is_empty() {
+                    return uncrowding::uncrowd_resolution(pool, s);
+                }
             }
+            node.clone()
+        });
+        if resolution_granularity >= ResolutionGranularity::Reordering {
+            reordering::remove_reorderings(&uncrowded)
+        } else {
+            uncrowded
         }
-        node.clone()
-    });
-
-    reordering::remove_reorderings(&result)
+    } else {
+        elaborated
+    }
 }
 
 fn elaborate_assume(
