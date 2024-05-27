@@ -39,7 +39,7 @@ fn get_recomputation_func(rule: &str) -> Option<RecomputationFunc> {
     Some(match rule {
         "or_intro" => recompute_or_intro,
         "contraction" => recompute_contraction,
-        "resolution" => recompute_resolution,
+        "resolution" | "th_resolution" | "strict_resolution" => recompute_resolution,
         _ => return None,
     })
 }
