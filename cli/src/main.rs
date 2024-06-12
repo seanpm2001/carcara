@@ -190,6 +190,7 @@ enum ElaborationStep {
     Local,
     Uncrowd,
     Reordering,
+    Hole,
 }
 
 #[derive(Args, Clone)]
@@ -213,12 +214,26 @@ struct ElaborationOptions {
     #[clap(long)]
     uncrowd_rotate: bool,
 
+    /// Elaborate certain holey steps using the provided solver.
+    #[clap(long)]
+    hole_solver: Option<String>,
+
+    /// The arguments to pass to the hole solver. This should be a single string where
+    /// multiple arguments are separated by spaces.
+    #[clap(
+        long,
+        requires = "hole-solver",
+        allow_hyphen_values = true,
+        default_value = "--disable-banner --disable-print-success --proof-prune --proof-merge --proof="
+    )]
+    hole_solver_args: String,
+
     /// The pipeline of elaboration steps to use.
     #[clap(
         arg_enum,
         long,
         multiple = true,
-        default_values = &["polyeq", "lia-generic", "local", "uncrowd", "reordering"]
+        default_values = &["polyeq", "lia-generic", "local", "uncrowd", "reordering", "hole"]
     )]
     pipeline: Vec<ElaborationStep>,
 }
@@ -234,6 +249,7 @@ impl From<ElaborationOptions> for (elaborator::Config, Vec<elaborator::Elaborati
                 ElaborationStep::Local => elaborator::ElaborationStep::Local,
                 ElaborationStep::Uncrowd => elaborator::ElaborationStep::Uncrowd,
                 ElaborationStep::Reordering => elaborator::ElaborationStep::Reordering,
+                ElaborationStep::Hole => elaborator::ElaborationStep::Hole,
             })
             .collect();
         let lia_options = val.lia_solver.map(|solver| elaborator::LiaGenericOptions {
@@ -244,8 +260,17 @@ impl From<ElaborationOptions> for (elaborator::Config, Vec<elaborator::Elaborati
                 .map(Into::into)
                 .collect(),
         });
+        let hole_options = val.hole_solver.map(|solver| elaborator::HoleOptions {
+            solver: solver.into(),
+            arguments: val
+                .hole_solver_args
+                .split_whitespace()
+                .map(Into::into)
+                .collect(),
+        });
         let config = elaborator::Config {
             lia_options,
+            hole_options,
             uncrowd_rotation: val.uncrowd_rotate,
         };
         (config, pipeline)
@@ -370,6 +395,10 @@ struct SliceCommandOptions {
     lia_solver: Option<String>,
     #[clap(long, allow_hyphen_values = true, hide = true)]
     lia_solver_args: Option<String>,
+    #[clap(long, hide = true)]
+    hole_solver: Option<String>,
+    #[clap(long, allow_hyphen_values = true, hide = true)]
+    hole_solver_args: Option<String>,
 }
 
 #[derive(ArgEnum, Clone)]

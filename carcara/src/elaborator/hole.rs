@@ -7,7 +7,7 @@ use std::{
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum LiaGenericError {
+pub enum HoleError {
     #[error("failed to spawn solver process")]
     FailedSpawnSolver(io::Error),
 
@@ -44,11 +44,11 @@ fn get_problem_string(
     use std::fmt::Write;
 
     let mut problem = String::new();
-    writeln!(&mut problem, "(set-option :produce-proofs true)").unwrap();
+    write!(&mut problem, "(set-option :produce-proofs true)\n").unwrap();
     write!(&mut problem, "{}", prelude).unwrap();
 
     let mut bytes = Vec::new();
-    printer::write_lia_smt_instance(pool, prelude, &mut bytes, conclusion, true).unwrap();
+    printer::write_lia_smt_instance(pool, prelude, &mut bytes, conclusion, false).unwrap();
     write!(&mut problem, "{}", String::from_utf8(bytes).unwrap()).unwrap();
 
     writeln!(&mut problem, "(check-sat)").unwrap();
@@ -58,13 +58,17 @@ fn get_problem_string(
     problem
 }
 
-pub fn lia_generic(elaborator: &mut Elaborator, step: &StepNode) -> Option<Rc<ProofNode>> {
+pub fn hole(elaborator: &mut Elaborator, step: &StepNode) -> Option<Rc<ProofNode>> {
     let problem = get_problem_string(elaborator.pool, elaborator.prelude, &step.clause);
-    let options = elaborator.config.lia_options.as_ref().unwrap();
+    let options = elaborator.config.hole_options.as_ref().unwrap();
     let commands = match get_solver_proof(elaborator.pool, problem, options) {
-        Ok(c) => c,
+        Ok((c, false)) => c,
+        Ok((_, true)) => {
+            log::warn!("failed to elaborate `all_simplify` step: solver proof contains holes");
+            return None;
+        }
         Err(e) => {
-            log::warn!("failed to elaborate `lia_generic` step: {}", e);
+            log::warn!("failed to elaborate `all_simplify` step: {}", e);
             return None;
         }
     };
@@ -81,34 +85,34 @@ pub fn lia_generic(elaborator: &mut Elaborator, step: &StepNode) -> Option<Rc<Pr
 fn get_solver_proof(
     pool: &mut PrimitivePool,
     problem: String,
-    options: &LiaGenericOptions,
-) -> Result<Vec<ProofCommand>, LiaGenericError> {
+    options: &HoleOptions,
+) -> Result<(Vec<ProofCommand>, bool), HoleError> {
     let mut process = Command::new(options.solver.as_ref())
         .args(options.arguments.iter().map(AsRef::as_ref))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(LiaGenericError::FailedSpawnSolver)?;
+        .map_err(HoleError::FailedSpawnSolver)?;
 
     process
         .stdin
         .take()
         .expect("failed to open solver stdin")
         .write_all(problem.as_bytes())
-        .map_err(LiaGenericError::FailedWriteToSolverStdin)?;
+        .map_err(HoleError::FailedWriteToSolverStdin)?;
 
     let output = process
         .wait_with_output()
-        .map_err(LiaGenericError::FailedWaitForSolver)?;
+        .map_err(HoleError::FailedWaitForSolver)?;
 
     if !output.status.success() {
         if let Ok(s) = std::str::from_utf8(&output.stderr) {
             if s.contains("interrupted by timeout.") {
-                return Err(LiaGenericError::SolverTimeout);
+                return Err(HoleError::SolverTimeout);
             }
         }
-        return Err(LiaGenericError::NonZeroExitCode(output.status.code()));
+        return Err(HoleError::NonZeroExitCode(output.status.code()));
     }
 
     let mut proof = output.stdout.as_slice();
@@ -116,21 +120,21 @@ fn get_solver_proof(
 
     proof
         .read_line(&mut first_line)
-        .map_err(|_| LiaGenericError::SolverGaveInvalidOutput)?;
+        .map_err(|_| HoleError::SolverGaveInvalidOutput)?;
 
     if first_line.trim_end() != "unsat" {
-        return Err(LiaGenericError::OutputNotUnsat);
+        return Err(HoleError::OutputNotUnsat);
     }
 
     parse_and_check_solver_proof(pool, problem.as_bytes(), proof)
-        .map_err(|e| LiaGenericError::InnerProofError(Box::new(e)))
+        .map_err(|e| HoleError::InnerProofError(Box::new(e)))
 }
 
 fn parse_and_check_solver_proof(
     pool: &mut PrimitivePool,
     problem: &[u8],
     proof: &[u8],
-) -> CarcaraResult<Vec<ProofCommand>> {
+) -> CarcaraResult<(Vec<ProofCommand>, bool)> {
     let config = parser::Config {
         apply_function_defs: false,
         expand_lets: true,
@@ -143,9 +147,9 @@ fn parse_and_check_solver_proof(
     let mut proof = parser.parse_proof()?;
     proof.premises = premises;
 
-    let config = checker::Config::new().ignore_unknown_rules(true);
-    checker::ProofChecker::new(pool, config).check(&proof)?;
-    Ok(proof.commands)
+    let config = checker::Config::new();
+    let res = checker::ProofChecker::new(pool, config).check(&proof)?;
+    Ok((proof.commands, res))
 }
 
 fn increase_subproof_depth(proof: &Rc<ProofNode>, delta: usize, prefix: &str) -> Rc<ProofNode> {
@@ -174,7 +178,7 @@ fn insert_solver_proof(
     root_id: &str,
     depth: usize,
 ) -> Rc<ProofNode> {
-    let proof = ProofNode::from_commands(commands.clone());
+    let proof = ProofNode::from_commands(commands);
 
     let mut ids = IdHelper::new(root_id);
     let subproof_id = ids.next_id();
@@ -186,49 +190,8 @@ fn insert_solver_proof(
 
     clause.push(pool.bool_false());
 
-    let solver_proof_assumptions = proof.get_assumptions();
-    let proof = increase_subproof_depth(&proof, depth + 1, &subproof_id);
-    let mut subproof_assumptions = proof.get_assumptions_of_depth(depth + 1);
-
-    // every element of conclusion must be an assumption in the
-    // proof. No other assumptions must exist in the proof. If there
-    // are less assumptions than elements of conclusion, then some of
-    // the literals were not needed for the proof. In this case we
-    // create new assumptinos to account for them.
-    if conclusion.len() > solver_proof_assumptions.len() {
-        let assume_term_to_node: HashMap<&Rc<Term>, Rc<ProofNode>> = subproof_assumptions
-            .iter()
-            .map(|node| {
-                let (_, _, term) = node.as_assume().unwrap();
-                (term, node.clone())
-            })
-            .collect();
-
-        // we use a new kind of id to avoid clashes
-        let mut ids = IdHelper::new(&format!("{}.added", subproof_id));
-        // since there may be repeated literals, which would only have
-        // a single assumption for, we take care to only retrieve an
-        // existing assumption once
-        let mut covered = IndexSet::new();
-        subproof_assumptions = conclusion
-            .iter()
-            .map(|term| {
-                let term = build_term!(pool, (not {term.clone()}));
-                if !covered.contains(&term) {
-                    covered.insert(term.clone());
-                    if assume_term_to_node.contains_key(&term) {
-                        return assume_term_to_node.get(&term).unwrap().clone();
-                    }
-                }
-                // build new assumption proof node
-                return Rc::new(ProofNode::Assume {
-                    id: ids.next_id(),
-                    depth: depth + 1,
-                    term,
-                });
-            })
-            .collect();
-    }
+    let proof = increase_subproof_depth(&proof, depth + 1, root_id);
+    let subproof_assumptions = proof.get_assumptions_of_depth(depth + 1);
 
     let last_step = Rc::new(ProofNode::Step(StepNode {
         id: subproof_id,

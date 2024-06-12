@@ -1,3 +1,4 @@
+mod hole;
 mod lia_generic;
 mod polyeq;
 mod reflexivity;
@@ -22,6 +23,11 @@ pub struct Config {
     /// inserted in the place of the `lia_generic` step. See [`LiaGenericOptions`] for more details.
     pub lia_options: Option<LiaGenericOptions>,
 
+    /// If `Some`, enables the elaboration of certain holey steps,
+    /// like `all_simplify` and `rare_rewrite`, using an external
+    /// solver, like with `lia_generic`.
+    pub hole_options: Option<HoleOptions>,
+
     /// Enables an optimization that reorders premises when uncrowding resolution steps, in order to
     /// further minimize the number of `contraction` steps added.
     pub uncrowd_rotation: bool,
@@ -34,11 +40,23 @@ pub enum ElaborationStep {
     Local,
     Uncrowd,
     Reordering,
+    Hole,
 }
 
 /// The options that control how `lia_generic` steps are elaborated using an external solver.
 #[derive(Debug, Clone)]
 pub struct LiaGenericOptions {
+    /// The external solver path. The solver should be a binary that can read SMT-LIB from stdin and
+    /// output an Alethe proof to stdout.
+    pub solver: Box<str>,
+
+    /// The arguments to pass to the solver.
+    pub arguments: Vec<Box<str>>,
+}
+
+/// The options that control how `hole` steps are elaborated using an external solver.
+#[derive(Debug, Clone)]
+pub struct HoleOptions {
     /// The external solver path. The solver should be a binary that can read SMT-LIB from stdin and
     /// output an Alethe proof to stdout.
     pub solver: Box<str>,
@@ -109,6 +127,18 @@ impl<'e> Elaborator<'e> {
                     _ => node.clone(),
                 }),
                 ElaborationStep::Reordering => reordering::remove_reorderings(&current),
+                ElaborationStep::Hole => {
+                    if self.config.hole_options.is_none() {
+                        current.clone()
+                    } else {
+                        mutate(&current, |_, node| match node.as_ref() {
+                            ProofNode::Step(s) if s.rule == "all_simplify" => {
+                                hole::hole(self, s).unwrap_or_else(|| node.clone())
+                            }
+                            _ => node.clone(),
+                        })
+                    }
+                }
             };
             durations.push(time.elapsed());
         }
