@@ -132,7 +132,9 @@ impl<'e> Elaborator<'e> {
                         current.clone()
                     } else {
                         mutate(&current, |_, node| match node.as_ref() {
-                            ProofNode::Step(s) if s.rule == "all_simplify" => {
+                            ProofNode::Step(s)
+                                if (s.rule == "all_simplify" || s.rule == "rare_rewrite") =>
+                            {
                                 hole::hole(self, s).unwrap_or_else(|| node.clone())
                             }
                             _ => node.clone(),
